@@ -208,12 +208,12 @@ with st.form("full_intake_form", clear_on_submit=False):
     
     # Section 0: User Identification
     st.header("0. Your Information")
-    st.markdown("*Enter your ID number to associate this case with you.*")
-    
-    user_id = st.text_input(
-        "Your ID Number",
-        help="Enter your unique ID number. You'll need this to view your cases later.",
-        placeholder="Enter your ID number..."
+    st.markdown("*Enter your full name to associate this case with you. Names are case sensitive.*")
+
+    user_name = st.text_input(
+        "Your Full Name",
+        help="Enter your full name exactly as you want it recorded. Use the same name each time to keep your cases together.",
+        placeholder="Enter your full name..."
     )
     
     st.markdown("---")
@@ -324,9 +324,9 @@ with st.form("full_intake_form", clear_on_submit=False):
     if submitted:
         # Validation
         errors = []
-        
-        if not user_id or not user_id.strip():
-            errors.append("Your ID Number is required")
+
+        if not user_name or not user_name.strip():
+            errors.append("Your Full Name is required")
         if age is None:
             errors.append("Age at SNF Stay is required")
         if not gender:
@@ -342,9 +342,9 @@ with st.form("full_intake_form", clear_on_submit=False):
         else:
             try:
                 # Create case
-                case_id = create_case(
+                create_case(
                     intake_version="full",
-                    user_id=user_id.strip(),
+                    user_name=user_name.strip(),
                     age_at_snf_stay=int(age),
                     gender=gender,
                     race=race,
@@ -354,14 +354,10 @@ with st.form("full_intake_form", clear_on_submit=False):
                     services_accepted=services_accepted if services_accepted else None,
                     answers=answers
                 )
-                
+
                 st.success(f"✅ Case saved successfully!")
-                st.info(f"📋 **Case ID**: `{case_id}`")
-                
-                # Option to copy case ID
-                st.code(case_id, language=None)
-                st.caption("👆 Copy this Case ID to reference this case later in the Case Viewer.")
-                
+                st.info(f"View your cases in the **Case Viewer** using your name: **{user_name.strip()}**")
+
             except Exception as e:
                 st.error(f"❌ Error saving case: {str(e)}")
 
@@ -370,7 +366,7 @@ with st.sidebar:
     st.markdown("### Full Intake")
     st.markdown("""
     This comprehensive form captures:
-    - Your ID number
+    - Your full name
     - Patient demographics
     - Case overview & referral
     - Admission & assessment details
@@ -380,17 +376,18 @@ with st.sidebar:
     - Transition home
     - Follow-up outcomes
     """)
-    
+
     st.markdown("---")
     st.markdown("### Question Sections")
     for section_id, section_name in SECTIONS.items():
         count = sum(1 for q in FULL_QUESTIONS.values() if q["section"] == section_id)
         st.markdown(f"- **{section_name}**: {count} questions")
-    
+
     st.markdown("---")
     st.markdown("### Tips")
     st.markdown("""
-    - Enter your ID number first
+    - Enter your full name first
+    - Names are **case sensitive**
     - Answer in **past tense**
     - Be as detailed as possible
     - All demographics are required

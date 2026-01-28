@@ -7,7 +7,7 @@ Admin users can view all cases with the admin password.
 
 import streamlit as st
 import json
-from db import get_case_by_id, get_cases_by_user_id, get_recent_cases, init_db
+from db import get_case_by_id, get_cases_by_user_name, get_all_user_names, init_db
 
 # Page configuration
 st.set_page_config(
@@ -78,11 +78,14 @@ ABBREV_SECTIONS = {
 }
 
 
-def display_case(case):
+def display_case(case, case_number=None):
     """Display a single case with all its details."""
-    
+
     # Case metadata header
-    st.header(f"Case: {case.case_id[:8]}...")
+    if case_number:
+        st.header(f"Case {case_number}")
+    else:
+        st.header(f"Case")
     
     # Metadata columns
     col1, col2, col3, col4 = st.columns(4)
@@ -218,71 +221,66 @@ def display_case(case):
     with col2:
         with st.expander("👁️ View Raw JSON"):
             st.json(export_data)
-    
-    # Full Case ID for reference
-    st.markdown("---")
-    st.markdown("**Full Case ID:**")
-    st.code(case.case_id, language=None)
 
 
 # Title
 st.title("🔍 Case Viewer")
-st.markdown("View saved cases by entering your ID number or admin password.")
+st.markdown("View saved cases by entering your full name or using admin access.")
 st.markdown("---")
 
 # Access mode selection
 access_mode = st.radio(
     "Select access mode:",
-    ["View My Cases (User ID)", "View All Cases (Admin)"],
+    ["View My Cases", "View All Cases (Admin)"],
     horizontal=True
 )
 
-if access_mode == "View My Cases (User ID)":
+if access_mode == "View My Cases":
     # User mode - show only their cases
-    st.markdown("### Enter Your ID Number")
-    
-    user_id_input = st.text_input(
-        "Your ID Number",
-        placeholder="Enter the ID number you used when creating cases...",
-        help="Enter the same ID number you used when submitting cases"
+    st.markdown("### Enter Your Full Name")
+
+    user_name_input = st.text_input(
+        "Your Full Name",
+        placeholder="Enter the full name you used when creating cases...",
+        help="Names are case sensitive - enter your name exactly as you did when creating cases"
     )
-    
+
     if st.button("🔍 View My Cases", use_container_width=True, type="primary"):
-        if user_id_input and user_id_input.strip():
-            user_cases = get_cases_by_user_id(user_id_input.strip())
-            
+        if user_name_input and user_name_input.strip():
+            user_cases = get_cases_by_user_name(user_name_input.strip())
+
             if user_cases:
-                st.success(f"Found {len(user_cases)} case(s) for ID: {user_id_input}")
+                st.success(f"Found {len(user_cases)} case(s) for: {user_name_input}")
                 st.markdown("---")
-                
-                # Let user select which case to view
-                case_options = {
-                    f"{c.case_id[:8]}... ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}": c.case_id 
-                    for c in user_cases
-                }
-                
+
+                # Let user select which case to view (numbered Case 1, Case 2, etc.)
+                case_options = {}
+                for idx, c in enumerate(user_cases, start=1):
+                    label = f"Case {idx} ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}"
+                    case_options[label] = (c.case_id, idx)
+
                 selected_case_label = st.selectbox(
                     "Select a case to view:",
                     options=list(case_options.keys())
                 )
-                
+
                 if selected_case_label:
-                    selected_case_id = case_options[selected_case_label]
+                    selected_case_id, case_num = case_options[selected_case_label]
                     selected_case = get_case_by_id(selected_case_id)
-                    
+
                     if selected_case:
                         st.markdown("---")
-                        display_case(selected_case)
+                        display_case(selected_case, case_number=case_num)
             else:
-                st.warning(f"No cases found for ID: {user_id_input}")
-                st.info("Make sure you're using the same ID number you entered when creating cases.")
+                st.warning(f"No cases found for: {user_name_input}")
+                st.info("Make sure you're using the exact same name (case sensitive) you entered when creating cases.")
         else:
-            st.error("Please enter your ID number.")
+            st.error("Please enter your full name.")
 
 else:
-    # Admin mode - show all cases
+    # Admin mode - show all cases by person
     st.markdown("### Admin Access")
-    
+
     if ADMIN_PASSWORD is None:
         st.error("⚠️ Admin password not configured. Please add ADMIN_PASSWORD to Streamlit secrets.")
     else:
@@ -292,59 +290,83 @@ else:
             placeholder="Enter admin password...",
             help="Contact the administrator for access"
         )
-        
-        if st.button("🔓 Access All Cases", use_container_width=True, type="primary"):
+
+        if st.button("🔓 Access Admin View", use_container_width=True, type="primary"):
             if admin_password_input == ADMIN_PASSWORD:
-                st.success("✅ Admin access granted!")
-                st.markdown("---")
-                
-                # Get all recent cases
-                all_cases = get_recent_cases(limit=100)
-                
-                if all_cases:
-                    st.markdown(f"### All Cases ({len(all_cases)} total)")
-                    
-                    # Let admin select which case to view
-                    case_options = {
-                        f"{c.case_id[:8]}... | User: {c.user_id} | {c.created_at.strftime('%Y-%m-%d %H:%M')} | {c.intake_version.title()}": c.case_id 
-                        for c in all_cases
-                    }
-                    
-                    selected_case_label = st.selectbox(
-                        "Select a case to view:",
-                        options=list(case_options.keys())
-                    )
-                    
-                    if selected_case_label:
-                        selected_case_id = case_options[selected_case_label]
-                        selected_case = get_case_by_id(selected_case_id)
-                        
-                        if selected_case:
-                            st.markdown("---")
-                            st.markdown(f"**Created by User ID:** `{selected_case.user_id}`")
-                            display_case(selected_case)
-                else:
-                    st.info("No cases have been recorded yet.")
+                st.session_state['admin_authenticated'] = True
             else:
                 st.error("❌ Incorrect admin password.")
+
+        # Show admin interface if authenticated
+        if st.session_state.get('admin_authenticated', False):
+            st.success("✅ Admin access granted!")
+            st.markdown("---")
+
+            # Get all unique user names
+            all_users = get_all_user_names()
+
+            if all_users:
+                st.markdown(f"### Select a Person ({len(all_users)} total)")
+
+                # Dropdown to select a person
+                selected_user = st.selectbox(
+                    "Select a person to view their cases:",
+                    options=[""] + all_users,
+                    format_func=lambda x: "-- Select a person --" if x == "" else x
+                )
+
+                if selected_user:
+                    # Get cases for selected user
+                    user_cases = get_cases_by_user_name(selected_user)
+
+                    if user_cases:
+                        st.markdown(f"### Cases for: **{selected_user}** ({len(user_cases)} total)")
+                        st.markdown("---")
+
+                        # Let admin select which case to view (numbered Case 1, Case 2, etc.)
+                        case_options = {}
+                        for idx, c in enumerate(user_cases, start=1):
+                            label = f"Case {idx} ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}"
+                            case_options[label] = (c.case_id, idx)
+
+                        selected_case_label = st.selectbox(
+                            "Select a case to view:",
+                            options=list(case_options.keys())
+                        )
+
+                        if selected_case_label:
+                            selected_case_id, case_num = case_options[selected_case_label]
+                            selected_case = get_case_by_id(selected_case_id)
+
+                            if selected_case:
+                                st.markdown("---")
+                                st.markdown(f"**Created by:** {selected_case.user_name}")
+                                display_case(selected_case, case_number=case_num)
+                    else:
+                        st.info(f"No cases found for {selected_user}.")
+            else:
+                st.info("No cases have been recorded yet.")
 
 # Sidebar info
 with st.sidebar:
     st.markdown("### Case Viewer")
     st.markdown("""
     **User Mode:**
-    - Enter your ID number
+    - Enter your full name
     - View only cases you created
-    
+    - Cases numbered in order (Case 1, Case 2, etc.)
+
     **Admin Mode:**
     - Enter admin password
-    - View all cases from all users
+    - Select a person from dropdown
+    - View all their cases
     """)
-    
+
     st.markdown("---")
     st.markdown("### Tips")
     st.markdown("""
-    - Use the same ID you entered when creating cases
+    - Names are **case sensitive**
+    - Use the exact name you entered when creating cases
     - Download cases as JSON for offline review
     - Contact admin for full access
     """)

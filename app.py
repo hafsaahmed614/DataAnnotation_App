@@ -36,22 +36,22 @@ patient navigator cases through a structured, conversational intake process.
    - **Full Intake**: A comprehensive form with detailed questions about the entire patient journey
 
 2. **Complete the Intake**:
-   - Enter your **ID number** (you'll need this to view your cases later)
+   - Enter your **full name** (case sensitive - use the same name each time)
    - Fill in patient demographics (age, gender, race, SNF state)
    - Answer narrative questions about the case in past tense
    - All questions refer to cases that have already concluded
 
 3. **Review Your Cases**:
    - Use the **Case Viewer** to search and review your saved cases
-   - Enter your ID number to see only your cases
+   - Enter your full name to see your cases numbered in order (Case 1, Case 2, etc.)
 
 ### Important Notes
 
 - All cases are recorded with a fixed start date of **January 1, 2025**
 - Please answer all questions in **past tense** (cases have already occurred)
 - Demographic fields are required; narrative fields capture the story of each case
-- Case IDs are generated automatically upon saving
-- **Remember your ID number** — you'll need it to view your cases later
+- Your cases are automatically numbered in the order you enter them
+- **Use your full name consistently** — names are case sensitive
 """)
 
 st.markdown("---")
@@ -89,9 +89,9 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Remember")
     st.markdown("""
-    ⚠️ **Keep track of your ID number!**
-    
-    You'll need it to view your cases later in the Case Viewer.
+    ⚠️ **Use your full name consistently!**
+
+    Names are case sensitive. Use the exact same name each time to view all your cases together.
     """)
 
 # Footer
