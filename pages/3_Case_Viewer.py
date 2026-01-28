@@ -1,13 +1,13 @@
 """
 SNF Patient Navigator Case Collection - Case Viewer Page
 
-Search and view saved cases by Case ID. Displays demographics, metadata,
-and renders narrative responses in readable sections.
+Search and view saved cases. Regular users can only view their own cases.
+Admin users can view all cases with the admin password.
 """
 
 import streamlit as st
 import json
-from db import get_case_by_id, get_all_case_ids, init_db
+from db import get_case_by_id, get_cases_by_user_id, get_recent_cases, init_db
 
 # Page configuration
 st.set_page_config(
@@ -18,6 +18,9 @@ st.set_page_config(
 
 # Ensure database is initialized
 init_db()
+
+# Get admin password from secrets (if configured)
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", None)
 
 # Question labels for display (combined from both forms)
 QUESTION_LABELS = {
@@ -74,212 +77,274 @@ ABBREV_SECTIONS = {
     "HHA Coordination": ["aq7", "aq8"]
 }
 
+
+def display_case(case):
+    """Display a single case with all its details."""
+    
+    # Case metadata header
+    st.header(f"Case: {case.case_id[:8]}...")
+    
+    # Metadata columns
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Intake Type", "Abbreviated" if case.intake_version == "abbrev" else "Full")
+    
+    with col2:
+        st.metric("Created", case.created_at.strftime("%Y-%m-%d %H:%M") if case.created_at else "N/A")
+    
+    with col3:
+        st.metric("Case Start Date", case.case_start_date.strftime("%Y-%m-%d") if case.case_start_date else "N/A")
+    
+    with col4:
+        st.metric("SNF Days", case.snf_days if case.snf_days else "—")
+    
+    st.markdown("---")
+    
+    # Demographics section
+    st.subheader("👤 Demographics")
+    
+    demo_col1, demo_col2, demo_col3, demo_col4 = st.columns(4)
+    
+    with demo_col1:
+        st.markdown(f"**Age at SNF Stay**")
+        st.markdown(f"{case.age_at_snf_stay} years")
+    
+    with demo_col2:
+        st.markdown(f"**Gender**")
+        st.markdown(f"{case.gender}")
+    
+    with demo_col3:
+        st.markdown(f"**Race**")
+        st.markdown(f"{case.race}")
+    
+    with demo_col4:
+        st.markdown(f"**SNF State**")
+        st.markdown(f"{case.state}")
+    
+    st.markdown("---")
+    
+    # Services section
+    st.subheader("🏥 Services")
+    
+    svc_col1, svc_col2 = st.columns(2)
+    
+    with svc_col1:
+        st.markdown("**Services Discussed**")
+        if case.services_discussed:
+            st.markdown(case.services_discussed)
+        else:
+            st.markdown("*Not recorded*")
+    
+    with svc_col2:
+        st.markdown("**Services Accepted**")
+        if case.services_accepted:
+            st.markdown(case.services_accepted)
+        else:
+            st.markdown("*Not recorded*")
+    
+    st.markdown("---")
+    
+    # Narrative responses section
+    st.subheader("📝 Narrative Responses")
+    
+    # Parse answers JSON
+    try:
+        answers = json.loads(case.answers_json) if case.answers_json else {}
+    except json.JSONDecodeError:
+        answers = {}
+    
+    if answers:
+        # Determine which sections to use based on intake type
+        sections = ABBREV_SECTIONS if case.intake_version == "abbrev" else FULL_SECTIONS
+        
+        # Render by section
+        for section_name, question_ids in sections.items():
+            # Check if any questions in this section have answers
+            section_has_content = any(
+                qid in answers and answers[qid].strip() 
+                for qid in question_ids
+            )
+            
+            if section_has_content:
+                st.markdown(f"### 📌 {section_name}")
+                
+                for qid in question_ids:
+                    if qid in answers and answers[qid].strip():
+                        label = QUESTION_LABELS.get(qid, qid)
+                        st.markdown(f"**{label}** *(ID: {qid})*")
+                        
+                        # Display answer in a nice box
+                        st.info(answers[qid])
+                
+                st.markdown("")
+        
+        # Check for any answers that don't fit in sections
+        section_qids = set()
+        for qids in sections.values():
+            section_qids.update(qids)
+        
+        other_answers = {k: v for k, v in answers.items() if k not in section_qids and v.strip()}
+        
+        if other_answers:
+            st.markdown("### 📌 Other Responses")
+            for qid, answer in other_answers.items():
+                label = QUESTION_LABELS.get(qid, qid)
+                st.markdown(f"**{label}** *(ID: {qid})*")
+                st.info(answer)
+    else:
+        st.info("No narrative responses recorded for this case.")
+    
+    st.markdown("---")
+    
+    # Export section
+    st.subheader("📥 Export")
+    
+    # Prepare export data
+    export_data = case.to_dict()
+    export_json = json.dumps(export_data, indent=2, default=str)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.download_button(
+            label="📥 Download Case JSON",
+            data=export_json,
+            file_name=f"case_{case.case_id}.json",
+            mime="application/json",
+            use_container_width=True
+        )
+    
+    with col2:
+        with st.expander("👁️ View Raw JSON"):
+            st.json(export_data)
+    
+    # Full Case ID for reference
+    st.markdown("---")
+    st.markdown("**Full Case ID:**")
+    st.code(case.case_id, language=None)
+
+
 # Title
 st.title("🔍 Case Viewer")
-st.markdown("Search for a case by its Case ID to view full details including narratives.")
+st.markdown("View saved cases by entering your ID number or admin password.")
 st.markdown("---")
 
-# Get all case IDs for autocomplete/validation
-all_case_ids = get_all_case_ids()
+# Access mode selection
+access_mode = st.radio(
+    "Select access mode:",
+    ["View My Cases (User ID)", "View All Cases (Admin)"],
+    horizontal=True
+)
 
-# Search input
-col1, col2 = st.columns([3, 1])
-
-with col1:
-    case_id_input = st.text_input(
-        "Enter Case ID",
-        placeholder="e.g., a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-        help="Enter the full UUID case ID"
-    )
-
-with col2:
-    search_clicked = st.button("🔍 Search", use_container_width=True, type="primary")
-
-# Show recent case IDs as reference
-if all_case_ids:
-    with st.expander("📋 Recent Case IDs (click to expand)"):
-        st.markdown("Click on a Case ID to copy it:")
-        for cid in all_case_ids[:10]:
-            st.code(cid, language=None)
-
-# Process search
-if case_id_input and search_clicked:
-    case = get_case_by_id(case_id_input.strip())
+if access_mode == "View My Cases (User ID)":
+    # User mode - show only their cases
+    st.markdown("### Enter Your ID Number")
     
-    if case:
-        st.markdown("---")
-        st.success(f"✅ Case found!")
-        
-        # Case metadata header
-        st.header(f"Case: {case.case_id[:8]}...")
-        
-        # Metadata columns
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Intake Type", "Abbreviated" if case.intake_version == "abbrev" else "Full")
-        
-        with col2:
-            st.metric("Created", case.created_at.strftime("%Y-%m-%d %H:%M") if case.created_at else "N/A")
-        
-        with col3:
-            st.metric("Case Start Date", case.case_start_date.strftime("%Y-%m-%d") if case.case_start_date else "N/A")
-        
-        with col4:
-            st.metric("SNF Days", case.snf_days if case.snf_days else "—")
-        
-        st.markdown("---")
-        
-        # Demographics section
-        st.subheader("👤 Demographics")
-        
-        demo_col1, demo_col2, demo_col3, demo_col4 = st.columns(4)
-        
-        with demo_col1:
-            st.markdown(f"**Age at SNF Stay**")
-            st.markdown(f"{case.age_at_snf_stay} years")
-        
-        with demo_col2:
-            st.markdown(f"**Gender**")
-            st.markdown(f"{case.gender}")
-        
-        with demo_col3:
-            st.markdown(f"**Race**")
-            st.markdown(f"{case.race}")
-        
-        with demo_col4:
-            st.markdown(f"**SNF State**")
-            st.markdown(f"{case.state}")
-        
-        st.markdown("---")
-        
-        # Services section
-        st.subheader("🏥 Services")
-        
-        svc_col1, svc_col2 = st.columns(2)
-        
-        with svc_col1:
-            st.markdown("**Services Discussed**")
-            if case.services_discussed:
-                st.markdown(case.services_discussed)
-            else:
-                st.markdown("*Not recorded*")
-        
-        with svc_col2:
-            st.markdown("**Services Accepted**")
-            if case.services_accepted:
-                st.markdown(case.services_accepted)
-            else:
-                st.markdown("*Not recorded*")
-        
-        st.markdown("---")
-        
-        # Narrative responses section
-        st.subheader("📝 Narrative Responses")
-        
-        # Parse answers JSON
-        try:
-            answers = json.loads(case.answers_json) if case.answers_json else {}
-        except json.JSONDecodeError:
-            answers = {}
-        
-        if answers:
-            # Determine which sections to use based on intake type
-            sections = ABBREV_SECTIONS if case.intake_version == "abbrev" else FULL_SECTIONS
+    user_id_input = st.text_input(
+        "Your ID Number",
+        placeholder="Enter the ID number you used when creating cases...",
+        help="Enter the same ID number you used when submitting cases"
+    )
+    
+    if st.button("🔍 View My Cases", use_container_width=True, type="primary"):
+        if user_id_input and user_id_input.strip():
+            user_cases = get_cases_by_user_id(user_id_input.strip())
             
-            # Render by section
-            for section_name, question_ids in sections.items():
-                # Check if any questions in this section have answers
-                section_has_content = any(
-                    qid in answers and answers[qid].strip() 
-                    for qid in question_ids
+            if user_cases:
+                st.success(f"Found {len(user_cases)} case(s) for ID: {user_id_input}")
+                st.markdown("---")
+                
+                # Let user select which case to view
+                case_options = {
+                    f"{c.case_id[:8]}... ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}": c.case_id 
+                    for c in user_cases
+                }
+                
+                selected_case_label = st.selectbox(
+                    "Select a case to view:",
+                    options=list(case_options.keys())
                 )
                 
-                if section_has_content:
-                    st.markdown(f"### 📌 {section_name}")
+                if selected_case_label:
+                    selected_case_id = case_options[selected_case_label]
+                    selected_case = get_case_by_id(selected_case_id)
                     
-                    for qid in question_ids:
-                        if qid in answers and answers[qid].strip():
-                            label = QUESTION_LABELS.get(qid, qid)
-                            st.markdown(f"**{label}** *(ID: {qid})*")
-                            
-                            # Display answer in a nice box
-                            st.info(answers[qid])
-                    
-                    st.markdown("")
-            
-            # Check for any answers that don't fit in sections
-            section_qids = set()
-            for qids in sections.values():
-                section_qids.update(qids)
-            
-            other_answers = {k: v for k, v in answers.items() if k not in section_qids and v.strip()}
-            
-            if other_answers:
-                st.markdown("### 📌 Other Responses")
-                for qid, answer in other_answers.items():
-                    label = QUESTION_LABELS.get(qid, qid)
-                    st.markdown(f"**{label}** *(ID: {qid})*")
-                    st.info(answer)
+                    if selected_case:
+                        st.markdown("---")
+                        display_case(selected_case)
+            else:
+                st.warning(f"No cases found for ID: {user_id_input}")
+                st.info("Make sure you're using the same ID number you entered when creating cases.")
         else:
-            st.info("No narrative responses recorded for this case.")
-        
-        st.markdown("---")
-        
-        # Export section
-        st.subheader("📥 Export")
-        
-        # Prepare export data
-        export_data = case.to_dict()
-        export_json = json.dumps(export_data, indent=2, default=str)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.download_button(
-                label="📥 Download Case JSON",
-                data=export_json,
-                file_name=f"case_{case.case_id}.json",
-                mime="application/json",
-                use_container_width=True
-            )
-        
-        with col2:
-            with st.expander("👁️ View Raw JSON"):
-                st.json(export_data)
-        
-        # Full Case ID for reference
-        st.markdown("---")
-        st.markdown("**Full Case ID:**")
-        st.code(case.case_id, language=None)
-        
-    else:
-        st.error(f"❌ No case found with ID: {case_id_input}")
-        st.info("Please check the Case ID and try again. Case IDs are UUIDs in the format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+            st.error("Please enter your ID number.")
 
-elif search_clicked and not case_id_input:
-    st.warning("⚠️ Please enter a Case ID to search.")
+else:
+    # Admin mode - show all cases
+    st.markdown("### Admin Access")
+    
+    if ADMIN_PASSWORD is None:
+        st.error("⚠️ Admin password not configured. Please add ADMIN_PASSWORD to Streamlit secrets.")
+    else:
+        admin_password_input = st.text_input(
+            "Admin Password",
+            type="password",
+            placeholder="Enter admin password...",
+            help="Contact the administrator for access"
+        )
+        
+        if st.button("🔓 Access All Cases", use_container_width=True, type="primary"):
+            if admin_password_input == ADMIN_PASSWORD:
+                st.success("✅ Admin access granted!")
+                st.markdown("---")
+                
+                # Get all recent cases
+                all_cases = get_recent_cases(limit=100)
+                
+                if all_cases:
+                    st.markdown(f"### All Cases ({len(all_cases)} total)")
+                    
+                    # Let admin select which case to view
+                    case_options = {
+                        f"{c.case_id[:8]}... | User: {c.user_id} | {c.created_at.strftime('%Y-%m-%d %H:%M')} | {c.intake_version.title()}": c.case_id 
+                        for c in all_cases
+                    }
+                    
+                    selected_case_label = st.selectbox(
+                        "Select a case to view:",
+                        options=list(case_options.keys())
+                    )
+                    
+                    if selected_case_label:
+                        selected_case_id = case_options[selected_case_label]
+                        selected_case = get_case_by_id(selected_case_id)
+                        
+                        if selected_case:
+                            st.markdown("---")
+                            st.markdown(f"**Created by User ID:** `{selected_case.user_id}`")
+                            display_case(selected_case)
+                else:
+                    st.info("No cases have been recorded yet.")
+            else:
+                st.error("❌ Incorrect admin password.")
 
 # Sidebar info
 with st.sidebar:
     st.markdown("### Case Viewer")
     st.markdown("""
-    Use this page to:
-    - Search for cases by ID
-    - View full case details
-    - Review narrative responses
-    - Export case data as JSON
-    """)
+    **User Mode:**
+    - Enter your ID number
+    - View only cases you created
     
-    st.markdown("---")
-    st.markdown("### Statistics")
-    st.metric("Total Cases", len(all_case_ids))
+    **Admin Mode:**
+    - Enter admin password
+    - View all cases from all users
+    """)
     
     st.markdown("---")
     st.markdown("### Tips")
     st.markdown("""
-    - Case IDs are UUIDs (36 characters)
-    - Copy Case ID from intake confirmation
-    - Recent cases are listed above
-    - Download JSON for offline review
+    - Use the same ID you entered when creating cases
+    - Download cases as JSON for offline review
+    - Contact admin for full access
     """)

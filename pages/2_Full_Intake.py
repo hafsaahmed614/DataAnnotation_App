@@ -206,6 +206,18 @@ st.markdown("---")
 # Form
 with st.form("full_intake_form", clear_on_submit=False):
     
+    # Section 0: User Identification
+    st.header("0. Your Information")
+    st.markdown("*Enter your ID number to associate this case with you.*")
+    
+    user_id = st.text_input(
+        "Your ID Number",
+        help="Enter your unique ID number. You'll need this to view your cases later.",
+        placeholder="Enter your ID number..."
+    )
+    
+    st.markdown("---")
+    
     # Section 1: Demographics
     st.header("1. Patient Demographics")
     st.markdown("*All demographic fields are required.*")
@@ -313,6 +325,8 @@ with st.form("full_intake_form", clear_on_submit=False):
         # Validation
         errors = []
         
+        if not user_id or not user_id.strip():
+            errors.append("Your ID Number is required")
         if age is None:
             errors.append("Age at SNF Stay is required")
         if not gender:
@@ -330,6 +344,7 @@ with st.form("full_intake_form", clear_on_submit=False):
                 # Create case
                 case_id = create_case(
                     intake_version="full",
+                    user_id=user_id.strip(),
                     age_at_snf_stay=int(age),
                     gender=gender,
                     race=race,
@@ -342,7 +357,6 @@ with st.form("full_intake_form", clear_on_submit=False):
                 
                 st.success(f"✅ Case saved successfully!")
                 st.info(f"📋 **Case ID**: `{case_id}`")
-                st.balloons()
                 
                 # Option to copy case ID
                 st.code(case_id, language=None)
@@ -356,6 +370,7 @@ with st.sidebar:
     st.markdown("### Full Intake")
     st.markdown("""
     This comprehensive form captures:
+    - Your ID number
     - Patient demographics
     - Case overview & referral
     - Admission & assessment details
@@ -375,6 +390,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Tips")
     st.markdown("""
+    - Enter your ID number first
     - Answer in **past tense**
     - Be as detailed as possible
     - All demographics are required

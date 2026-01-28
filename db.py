@@ -50,6 +50,9 @@ class Case(Base):
     case_start_date = Column(Date, default=FIXED_CASE_START_DATE, nullable=False)
     intake_version = Column(String(10), nullable=False)  # "abbrev" or "full"
     
+    # User ID (who created this case)
+    user_id = Column(String(100), nullable=False)
+    
     # Demographics (required)
     age_at_snf_stay = Column(Integer, nullable=False)
     gender = Column(Text, nullable=False)
@@ -71,6 +74,7 @@ class Case(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "case_start_date": self.case_start_date.isoformat() if self.case_start_date else None,
             "intake_version": self.intake_version,
+            "user_id": self.user_id,
             "age_at_snf_stay": self.age_at_snf_stay,
             "gender": self.gender,
             "race": self.race,
@@ -94,6 +98,7 @@ def get_session():
 
 def create_case(
     intake_version: str,
+    user_id: str,
     age_at_snf_stay: int,
     gender: str,
     race: str,
@@ -108,6 +113,7 @@ def create_case(
     
     Args:
         intake_version: "abbrev" or "full"
+        user_id: ID of the user creating this case
         age_at_snf_stay: Patient's age during SNF stay
         gender: Patient's gender
         race: Patient's race
@@ -124,6 +130,7 @@ def create_case(
     try:
         case = Case(
             intake_version=intake_version,
+            user_id=user_id,
             age_at_snf_stay=age_at_snf_stay,
             gender=gender,
             race=race,
@@ -160,6 +167,27 @@ def get_case_by_id(case_id: str) -> Optional[Case]:
             # Detach from session for safe use
             session.expunge(case)
         return case
+    finally:
+        session.close()
+
+
+def get_cases_by_user_id(user_id: str) -> List[Case]:
+    """
+    Retrieve all cases created by a specific user.
+    
+    Args:
+        user_id: The user's ID
+    
+    Returns:
+        List of Case objects ordered by created_at descending
+    """
+    session = get_session()
+    try:
+        cases = session.query(Case).filter(Case.user_id == user_id).order_by(Case.created_at.desc()).all()
+        # Detach from session
+        for case in cases:
+            session.expunge(case)
+        return cases
     finally:
         session.close()
 
@@ -202,3 +230,4 @@ def get_all_case_ids() -> List[str]:
 
 # Initialize database on module import
 init_db()
+
