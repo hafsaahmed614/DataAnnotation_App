@@ -107,35 +107,12 @@ def show_login_form():
             st.rerun()
         return True
 
-    # Login/Register tabs
-    tab1, tab2 = st.tabs(["Login", "Register"])
+    # Login/Register tabs - Register first for new users
+    tab1, tab2 = st.tabs(["Register", "Login"])
 
     with tab1:
-        st.markdown("### Login")
-        login_username = st.text_input(
-            "Username (Full Name)",
-            key="login_username",
-            placeholder="Enter your full name..."
-        )
-        login_pin = st.text_input(
-            "4-Digit PIN",
-            type="password",
-            key="login_pin",
-            placeholder="Enter your PIN...",
-            max_chars=4
-        )
-
-        if st.button("Login", use_container_width=True, type="primary", key="login_btn"):
-            if not login_username or not login_pin:
-                st.error("Please enter both username and PIN.")
-            elif login(login_username.strip(), login_pin):
-                st.success("Login successful!")
-                st.rerun()
-            else:
-                st.error("Invalid username or PIN. Please try again.")
-
-    with tab2:
         st.markdown("### Create Account")
+        st.markdown("*New user? Create an account to get started.*")
         reg_username = st.text_input(
             "Username (Full Name)",
             key="reg_username",
@@ -167,7 +144,33 @@ def show_login_form():
                 success, message = register(reg_username.strip(), reg_pin)
                 if success:
                     st.success(message)
+                    st.info("Switch to the **Login** tab to sign in.")
                 else:
                     st.error(message)
+
+    with tab2:
+        st.markdown("### Login")
+        st.markdown("*Already have an account? Sign in here.*")
+        login_username = st.text_input(
+            "Username (Full Name)",
+            key="login_username",
+            placeholder="Enter your full name..."
+        )
+        login_pin = st.text_input(
+            "4-Digit PIN",
+            type="password",
+            key="login_pin",
+            placeholder="Enter your PIN...",
+            max_chars=4
+        )
+
+        if st.button("Login", use_container_width=True, type="primary", key="login_btn"):
+            if not login_username or not login_pin:
+                st.error("Please enter both username and PIN.")
+            elif login(login_username.strip(), login_pin):
+                st.success("Login successful!")
+                st.rerun()
+            else:
+                st.error("Invalid username or PIN. Please try again.")
 
     return False
