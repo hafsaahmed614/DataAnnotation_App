@@ -140,6 +140,26 @@ class AudioResponse(Base):
         }
 
 
+class AppSettings(Base):
+    """
+    SQLAlchemy model for application-wide settings.
+    Stores key-value pairs for configuration.
+    """
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow(), nullable=False)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert setting to dictionary."""
+        return {
+            "key": self.key,
+            "value": self.value,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
 # ============== Authentication Functions ==============
 
 def hash_pin(pin: str) -> str:
@@ -403,6 +423,91 @@ def get_latest_audio_response(case_id: str, question_id: str) -> Optional[AudioR
         return response
     finally:
         session.close()
+
+
+# ============== App Settings Functions ==============
+
+# Default settings for Whisper transcription
+DEFAULT_SETTINGS = {
+    "whisper_model_size": "base",  # tiny, base, small, medium, large
+    "whisper_model_version": "openai-whisper",  # openai-whisper, or future: granite-3.3
+}
+
+
+def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
+    """
+    Get an application setting by key.
+
+    Args:
+        key: The setting key
+        default: Default value if setting doesn't exist
+
+    Returns:
+        The setting value or default
+    """
+    session = get_session()
+    try:
+        setting = session.query(AppSettings).filter(AppSettings.key == key).first()
+        if setting:
+            return setting.value
+        return default if default is not None else DEFAULT_SETTINGS.get(key)
+    finally:
+        session.close()
+
+
+def set_setting(key: str, value: str) -> None:
+    """
+    Set an application setting.
+
+    Args:
+        key: The setting key
+        value: The setting value
+    """
+    session = get_session()
+    try:
+        setting = session.query(AppSettings).filter(AppSettings.key == key).first()
+        if setting:
+            setting.value = value
+        else:
+            setting = AppSettings(key=key, value=value)
+            session.add(setting)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def get_all_settings() -> Dict[str, str]:
+    """
+    Get all application settings.
+
+    Returns:
+        Dictionary of all settings with defaults filled in
+    """
+    session = get_session()
+    try:
+        settings = session.query(AppSettings).all()
+        result = DEFAULT_SETTINGS.copy()
+        for s in settings:
+            result[s.key] = s.value
+        return result
+    finally:
+        session.close()
+
+
+def get_whisper_settings() -> Dict[str, str]:
+    """
+    Get Whisper-specific settings.
+
+    Returns:
+        Dictionary with whisper_model_size and whisper_model_version
+    """
+    return {
+        "model_size": get_setting("whisper_model_size", "base"),
+        "model_version": get_setting("whisper_model_version", "openai-whisper")
+    }
 
 
 def init_db():

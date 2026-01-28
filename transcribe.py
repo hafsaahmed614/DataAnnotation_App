@@ -1,6 +1,7 @@
 """
 Transcription module for SNF Patient Navigator Case Collection App.
 Uses OpenAI Whisper for local speech-to-text transcription.
+Supports admin-configurable model sizes.
 """
 
 import os
@@ -9,25 +10,51 @@ import streamlit as st
 
 # Lazy load whisper to avoid startup delays
 _whisper_model = None
+_current_model_name = None
 
 
-def get_whisper_model(model_name: str = "base"):
+def get_configured_model_size() -> str:
+    """
+    Get the configured Whisper model size from database settings.
+
+    Returns:
+        Model size string (tiny, base, small, medium, large)
+    """
+    try:
+        from db import get_setting
+        return get_setting("whisper_model_size", "base")
+    except Exception:
+        return "base"
+
+
+def get_whisper_model(model_name: str = None):
     """
     Get or load the Whisper model (singleton pattern).
+    Uses admin-configured model size if not specified.
 
     Args:
         model_name: Whisper model size ("tiny", "base", "small", "medium", "large")
+                   If None, uses the configured setting from admin panel.
 
     Returns:
         Loaded Whisper model
     """
-    global _whisper_model
+    global _whisper_model, _current_model_name
+
+    # Use configured model size if not specified
+    if model_name is None:
+        model_name = get_configured_model_size()
+
+    # Reload model if size changed
+    if _whisper_model is not None and _current_model_name != model_name:
+        _whisper_model = None  # Force reload with new size
 
     if _whisper_model is None:
         try:
             import whisper
             with st.spinner(f"Loading Whisper '{model_name}' model (first time only)..."):
                 _whisper_model = whisper.load_model(model_name)
+                _current_model_name = model_name
         except ImportError:
             st.error("Whisper not installed. Please install with: pip install openai-whisper")
             return None
@@ -38,13 +65,13 @@ def get_whisper_model(model_name: str = "base"):
     return _whisper_model
 
 
-def transcribe_audio(audio_bytes: bytes, model_name: str = "base") -> str | None:
+def transcribe_audio(audio_bytes: bytes, model_name: str = None) -> str | None:
     """
     Transcribe audio bytes to text using Whisper.
 
     Args:
         audio_bytes: Raw audio data (WAV format from st.audio_input)
-        model_name: Whisper model size
+        model_name: Whisper model size. If None, uses admin-configured setting.
 
     Returns:
         Transcribed text or None if transcription failed
@@ -74,13 +101,13 @@ def transcribe_audio(audio_bytes: bytes, model_name: str = "base") -> str | None
         return None
 
 
-def transcribe_audio_file(file_path: str, model_name: str = "base") -> str | None:
+def transcribe_audio_file(file_path: str, model_name: str = None) -> str | None:
     """
     Transcribe an audio file to text using Whisper.
 
     Args:
         file_path: Path to the audio file
-        model_name: Whisper model size
+        model_name: Whisper model size. If None, uses admin-configured setting.
 
     Returns:
         Transcribed text or None if transcription failed

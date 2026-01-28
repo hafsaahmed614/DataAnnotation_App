@@ -6,7 +6,7 @@ Supports both typed and audio-recorded answers with automatic transcription.
 """
 
 import streamlit as st
-from db import create_case, save_audio_response, init_db
+from db import create_case, save_audio_response, init_db, get_setting
 from auth import require_auth, get_current_username, init_session_state
 from transcribe import transcribe_audio
 
@@ -463,6 +463,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### Audio Recording")
+    current_model = get_setting("whisper_model_size", "base")
+    st.markdown(f"**Whisper Model:** {current_model}")
     st.markdown("""
     - Select **Record Audio** for any question
     - Click **Transcribe** to convert to text
