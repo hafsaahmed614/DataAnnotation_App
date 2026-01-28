@@ -50,8 +50,8 @@ class Case(Base):
     case_start_date = Column(Date, default=FIXED_CASE_START_DATE, nullable=False)
     intake_version = Column(String(10), nullable=False)  # "abbrev" or "full"
     
-    # User ID (who created this case)
-    user_id = Column(String(100), nullable=False)
+    # User name (who created this case) - case sensitive
+    user_name = Column(String(200), nullable=False)
     
     # Demographics (required)
     age_at_snf_stay = Column(Integer, nullable=False)
@@ -74,7 +74,7 @@ class Case(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "case_start_date": self.case_start_date.isoformat() if self.case_start_date else None,
             "intake_version": self.intake_version,
-            "user_id": self.user_id,
+            "user_name": self.user_name,
             "age_at_snf_stay": self.age_at_snf_stay,
             "gender": self.gender,
             "race": self.race,
@@ -98,7 +98,7 @@ def get_session():
 
 def create_case(
     intake_version: str,
-    user_id: str,
+    user_name: str,
     age_at_snf_stay: int,
     gender: str,
     race: str,
@@ -110,10 +110,10 @@ def create_case(
 ) -> str:
     """
     Create a new case record in the database.
-    
+
     Args:
         intake_version: "abbrev" or "full"
-        user_id: ID of the user creating this case
+        user_name: Full name of the user creating this case (case sensitive)
         age_at_snf_stay: Patient's age during SNF stay
         gender: Patient's gender
         race: Patient's race
@@ -122,7 +122,7 @@ def create_case(
         services_discussed: Free text of services discussed
         services_accepted: Free text of services accepted
         answers: Dictionary of narrative answers keyed by question ID
-    
+
     Returns:
         The generated case_id (UUID string)
     """
@@ -130,7 +130,7 @@ def create_case(
     try:
         case = Case(
             intake_version=intake_version,
-            user_id=user_id,
+            user_name=user_name,
             age_at_snf_stay=age_at_snf_stay,
             gender=gender,
             race=race,
@@ -171,19 +171,19 @@ def get_case_by_id(case_id: str) -> Optional[Case]:
         session.close()
 
 
-def get_cases_by_user_id(user_id: str) -> List[Case]:
+def get_cases_by_user_name(user_name: str) -> List[Case]:
     """
     Retrieve all cases created by a specific user.
-    
+
     Args:
-        user_id: The user's ID
-    
+        user_name: The user's full name (case sensitive)
+
     Returns:
-        List of Case objects ordered by created_at descending
+        List of Case objects ordered by created_at ascending (oldest first for numbering)
     """
     session = get_session()
     try:
-        cases = session.query(Case).filter(Case.user_id == user_id).order_by(Case.created_at.desc()).all()
+        cases = session.query(Case).filter(Case.user_name == user_name).order_by(Case.created_at.asc()).all()
         # Detach from session
         for case in cases:
             session.expunge(case)
@@ -216,13 +216,28 @@ def get_recent_cases(limit: int = 20) -> List[Case]:
 def get_all_case_ids() -> List[str]:
     """
     Get all case IDs for search/autocomplete.
-    
+
     Returns:
         List of case_id strings
     """
     session = get_session()
     try:
         result = session.query(Case.case_id).order_by(Case.created_at.desc()).all()
+        return [r[0] for r in result]
+    finally:
+        session.close()
+
+
+def get_all_user_names() -> List[str]:
+    """
+    Get all unique user names for admin dropdown.
+
+    Returns:
+        List of unique user_name strings sorted alphabetically
+    """
+    session = get_session()
+    try:
+        result = session.query(Case.user_name).distinct().order_by(Case.user_name.asc()).all()
         return [r[0] for r in result]
     finally:
         session.close()
