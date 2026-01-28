@@ -10,11 +10,24 @@ from db import init_db
 
 # Page configuration
 st.set_page_config(
-    page_title="SNF Patient Navigator Case Collection",
+    page_title="Dashboard | SNF Navigator",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Custom CSS to rename "app" to "Dashboard" in sidebar
+st.markdown("""
+<style>
+    [data-testid="stSidebarNav"] li:first-child a span {
+        visibility: hidden;
+    }
+    [data-testid="stSidebarNav"] li:first-child a span::before {
+        content: "Dashboard";
+        visibility: visible;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Ensure database is initialized
 init_db()

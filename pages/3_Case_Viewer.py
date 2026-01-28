@@ -239,6 +239,12 @@ if access_mode == "View My Cases":
     # User mode - show only their cases
     st.markdown("### Enter Your Full Name")
 
+    # Initialize session state for user search
+    if 'user_search_name' not in st.session_state:
+        st.session_state.user_search_name = None
+    if 'user_cases' not in st.session_state:
+        st.session_state.user_cases = None
+
     user_name_input = st.text_input(
         "Your Full Name",
         placeholder="Enter the full name you used when creating cases...",
@@ -247,35 +253,39 @@ if access_mode == "View My Cases":
 
     if st.button("🔍 View My Cases", use_container_width=True, type="primary"):
         if user_name_input and user_name_input.strip():
-            user_cases = get_cases_by_user_name(user_name_input.strip())
-
-            if user_cases:
-                st.success(f"Found {len(user_cases)} case(s) for: {user_name_input}")
-                st.markdown("---")
-
-                # Let user select which case to view (numbered Case 1, Case 2, etc.)
-                case_options = {}
-                for idx, c in enumerate(user_cases, start=1):
-                    label = f"Case {idx} ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}"
-                    case_options[label] = (c.case_id, idx)
-
-                selected_case_label = st.selectbox(
-                    "Select a case to view:",
-                    options=list(case_options.keys())
-                )
-
-                if selected_case_label:
-                    selected_case_id, case_num = case_options[selected_case_label]
-                    selected_case = get_case_by_id(selected_case_id)
-
-                    if selected_case:
-                        st.markdown("---")
-                        display_case(selected_case, case_number=case_num)
-            else:
-                st.warning(f"No cases found for: {user_name_input}")
-                st.info("Make sure you're using the exact same name (case sensitive) you entered when creating cases.")
+            # Store search in session state
+            st.session_state.user_search_name = user_name_input.strip()
+            st.session_state.user_cases = get_cases_by_user_name(user_name_input.strip())
         else:
             st.error("Please enter your full name.")
+
+    # Display results from session state (persists across reruns)
+    if st.session_state.user_cases is not None:
+        if st.session_state.user_cases:
+            st.success(f"Found {len(st.session_state.user_cases)} case(s) for: {st.session_state.user_search_name}")
+            st.markdown("---")
+
+            # Let user select which case to view (numbered Case 1, Case 2, etc.)
+            case_options = {}
+            for idx, c in enumerate(st.session_state.user_cases, start=1):
+                label = f"Case {idx} ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}"
+                case_options[label] = (c.case_id, idx)
+
+            selected_case_label = st.selectbox(
+                "Select a case to view:",
+                options=list(case_options.keys())
+            )
+
+            if selected_case_label:
+                selected_case_id, case_num = case_options[selected_case_label]
+                selected_case = get_case_by_id(selected_case_id)
+
+                if selected_case:
+                    st.markdown("---")
+                    display_case(selected_case, case_number=case_num)
+        else:
+            st.warning(f"No cases found for: {st.session_state.user_search_name}")
+            st.info("Make sure you're using the exact same name (case sensitive) you entered when creating cases.")
 
 else:
     # Admin mode - show all cases by person
