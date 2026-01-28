@@ -645,7 +645,6 @@ def generate_follow_up_questions(
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
             ],
-            temperature=0.7,
             max_completion_tokens=4000
         )
 
