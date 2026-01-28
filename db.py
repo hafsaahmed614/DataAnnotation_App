@@ -172,7 +172,7 @@ def create_user(username: str, pin: str) -> Optional[str]:
     Create a new user with username and 4-digit PIN.
 
     Args:
-        username: User's full name (case sensitive)
+        username: User's full name (case insensitive for matching)
         pin: 4-digit PIN
 
     Returns:
@@ -180,8 +180,9 @@ def create_user(username: str, pin: str) -> Optional[str]:
     """
     session = get_session()
     try:
-        # Check if username already exists
-        existing = session.query(User).filter(User.username == username).first()
+        # Check if username already exists (case insensitive)
+        from sqlalchemy import func
+        existing = session.query(User).filter(func.lower(User.username) == username.lower()).first()
         if existing:
             return None
 
@@ -204,7 +205,7 @@ def authenticate_user(username: str, pin: str) -> Optional[User]:
     Authenticate a user with username and PIN.
 
     Args:
-        username: User's full name (case sensitive)
+        username: User's full name (case insensitive)
         pin: 4-digit PIN
 
     Returns:
@@ -212,8 +213,9 @@ def authenticate_user(username: str, pin: str) -> Optional[User]:
     """
     session = get_session()
     try:
+        from sqlalchemy import func
         user = session.query(User).filter(
-            User.username == username,
+            func.lower(User.username) == username.lower(),
             User.pin_hash == hash_pin(pin)
         ).first()
         if user:
@@ -224,10 +226,11 @@ def authenticate_user(username: str, pin: str) -> Optional[User]:
 
 
 def get_user_by_username(username: str) -> Optional[User]:
-    """Get user by username."""
+    """Get user by username (case insensitive)."""
     session = get_session()
     try:
-        user = session.query(User).filter(User.username == username).first()
+        from sqlalchemy import func
+        user = session.query(User).filter(func.lower(User.username) == username.lower()).first()
         if user:
             session.expunge(user)
         return user
@@ -600,14 +603,15 @@ def get_cases_by_user_name(user_name: str) -> List[Case]:
     Retrieve all cases created by a specific user.
 
     Args:
-        user_name: The user's full name (case sensitive)
+        user_name: The user's full name (case insensitive)
 
     Returns:
         List of Case objects ordered by created_at ascending (oldest first for numbering)
     """
     session = get_session()
     try:
-        cases = session.query(Case).filter(Case.user_name == user_name).order_by(Case.created_at.asc()).all()
+        from sqlalchemy import func
+        cases = session.query(Case).filter(func.lower(Case.user_name) == user_name.lower()).order_by(Case.created_at.asc()).all()
         # Detach from session
         for case in cases:
             session.expunge(case)
