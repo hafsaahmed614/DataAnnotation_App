@@ -6,11 +6,12 @@ Supports SQLite (default) and PostgreSQL via DATABASE_URL environment variable.
 import os
 import json
 import uuid
+import hashlib
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 
-from sqlalchemy import create_engine, Column, String, Integer, Text, DateTime, Date
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import create_engine, Column, String, Integer, Text, DateTime, Date, ForeignKey, LargeBinary
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.pool import StaticPool
 
 # Default to SQLite for development
@@ -84,6 +85,324 @@ class Case(Base):
             "services_accepted": self.services_accepted,
             "answers": json.loads(self.answers_json) if self.answers_json else {}
         }
+
+
+class User(Base):
+    """
+    SQLAlchemy model for user authentication.
+    Users log in with username + 4-digit PIN.
+    """
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String(200), unique=True, nullable=False)
+    pin_hash = Column(String(64), nullable=False)  # SHA-256 hash of PIN
+    created_at = Column(DateTime, default=lambda: datetime.utcnow(), nullable=False)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert user to dictionary (excluding pin_hash)."""
+        return {
+            "id": self.id,
+            "username": self.username,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class AudioResponse(Base):
+    """
+    SQLAlchemy model for audio recordings and transcripts.
+    Supports versioning - each edit creates a new row with incremented version_number.
+    """
+    __tablename__ = "audio_responses"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    case_id = Column(String(36), ForeignKey("cases.case_id"), nullable=False)
+    question_id = Column(String(20), nullable=False)  # e.g., "aq1", "q6"
+    audio_path = Column(Text, nullable=True)  # Path in Supabase Storage
+    audio_data = Column(LargeBinary, nullable=True)  # Store audio bytes directly (fallback)
+    auto_transcript = Column(Text, nullable=True)  # Original Whisper transcription
+    edited_transcript = Column(Text, nullable=True)  # User-edited version
+    version_number = Column(Integer, default=1, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.utcnow(), nullable=False)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert audio response to dictionary."""
+        return {
+            "id": self.id,
+            "case_id": self.case_id,
+            "question_id": self.question_id,
+            "audio_path": self.audio_path,
+            "has_audio": self.audio_data is not None or self.audio_path is not None,
+            "auto_transcript": self.auto_transcript,
+            "edited_transcript": self.edited_transcript,
+            "version_number": self.version_number,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+# ============== Authentication Functions ==============
+
+def hash_pin(pin: str) -> str:
+    """Hash a 4-digit PIN using SHA-256."""
+    return hashlib.sha256(pin.encode()).hexdigest()
+
+
+def create_user(username: str, pin: str) -> Optional[str]:
+    """
+    Create a new user with username and 4-digit PIN.
+
+    Args:
+        username: User's full name (case sensitive)
+        pin: 4-digit PIN
+
+    Returns:
+        User ID if created successfully, None if username already exists
+    """
+    session = get_session()
+    try:
+        # Check if username already exists
+        existing = session.query(User).filter(User.username == username).first()
+        if existing:
+            return None
+
+        user = User(
+            username=username,
+            pin_hash=hash_pin(pin)
+        )
+        session.add(user)
+        session.commit()
+        return user.id
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def authenticate_user(username: str, pin: str) -> Optional[User]:
+    """
+    Authenticate a user with username and PIN.
+
+    Args:
+        username: User's full name (case sensitive)
+        pin: 4-digit PIN
+
+    Returns:
+        User object if authentication successful, None otherwise
+    """
+    session = get_session()
+    try:
+        user = session.query(User).filter(
+            User.username == username,
+            User.pin_hash == hash_pin(pin)
+        ).first()
+        if user:
+            session.expunge(user)
+        return user
+    finally:
+        session.close()
+
+
+def get_user_by_username(username: str) -> Optional[User]:
+    """Get user by username."""
+    session = get_session()
+    try:
+        user = session.query(User).filter(User.username == username).first()
+        if user:
+            session.expunge(user)
+        return user
+    finally:
+        session.close()
+
+
+def get_all_users() -> List[User]:
+    """Get all registered users."""
+    session = get_session()
+    try:
+        users = session.query(User).order_by(User.username.asc()).all()
+        for user in users:
+            session.expunge(user)
+        return users
+    finally:
+        session.close()
+
+
+# ============== Audio Response Functions ==============
+
+def save_audio_response(
+    case_id: str,
+    question_id: str,
+    audio_data: Optional[bytes] = None,
+    audio_path: Optional[str] = None,
+    auto_transcript: Optional[str] = None,
+    edited_transcript: Optional[str] = None
+) -> str:
+    """
+    Save an audio response with transcription. Creates version 1.
+
+    Args:
+        case_id: The case this response belongs to
+        question_id: The question ID (e.g., "aq1", "q6")
+        audio_data: Raw audio bytes (optional)
+        audio_path: Path to audio in Supabase Storage (optional)
+        auto_transcript: Original Whisper transcription
+        edited_transcript: User-edited transcript (optional)
+
+    Returns:
+        The audio response ID
+    """
+    session = get_session()
+    try:
+        response = AudioResponse(
+            case_id=case_id,
+            question_id=question_id,
+            audio_data=audio_data,
+            audio_path=audio_path,
+            auto_transcript=auto_transcript,
+            edited_transcript=edited_transcript,
+            version_number=1
+        )
+        session.add(response)
+        session.commit()
+        return response.id
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def save_transcript_version(
+    case_id: str,
+    question_id: str,
+    edited_transcript: str,
+    auto_transcript: Optional[str] = None,
+    audio_data: Optional[bytes] = None,
+    audio_path: Optional[str] = None
+) -> str:
+    """
+    Save a new version of a transcript. Increments version number automatically.
+
+    Args:
+        case_id: The case this response belongs to
+        question_id: The question ID
+        edited_transcript: The new edited transcript
+        auto_transcript: Original transcript (copied from previous if not provided)
+        audio_data: Audio bytes (copied from previous if not provided)
+        audio_path: Audio path (copied from previous if not provided)
+
+    Returns:
+        The new audio response ID
+    """
+    session = get_session()
+    try:
+        # Get the latest version for this case/question
+        latest = session.query(AudioResponse).filter(
+            AudioResponse.case_id == case_id,
+            AudioResponse.question_id == question_id
+        ).order_by(AudioResponse.version_number.desc()).first()
+
+        new_version = 1
+        if latest:
+            new_version = latest.version_number + 1
+            # Copy audio data from previous version if not provided
+            if audio_data is None and latest.audio_data:
+                audio_data = latest.audio_data
+            if audio_path is None and latest.audio_path:
+                audio_path = latest.audio_path
+            if auto_transcript is None and latest.auto_transcript:
+                auto_transcript = latest.auto_transcript
+
+        response = AudioResponse(
+            case_id=case_id,
+            question_id=question_id,
+            audio_data=audio_data,
+            audio_path=audio_path,
+            auto_transcript=auto_transcript,
+            edited_transcript=edited_transcript,
+            version_number=new_version
+        )
+        session.add(response)
+        session.commit()
+        return response.id
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def get_audio_responses_for_case(case_id: str) -> List[AudioResponse]:
+    """
+    Get all audio responses for a case (all questions, all versions).
+
+    Args:
+        case_id: The case ID
+
+    Returns:
+        List of AudioResponse objects ordered by question_id, version_number
+    """
+    session = get_session()
+    try:
+        responses = session.query(AudioResponse).filter(
+            AudioResponse.case_id == case_id
+        ).order_by(
+            AudioResponse.question_id.asc(),
+            AudioResponse.version_number.asc()
+        ).all()
+        for r in responses:
+            session.expunge(r)
+        return responses
+    finally:
+        session.close()
+
+
+def get_audio_response_versions(case_id: str, question_id: str) -> List[AudioResponse]:
+    """
+    Get all versions of an audio response for a specific question.
+
+    Args:
+        case_id: The case ID
+        question_id: The question ID
+
+    Returns:
+        List of AudioResponse objects ordered by version_number ascending
+    """
+    session = get_session()
+    try:
+        responses = session.query(AudioResponse).filter(
+            AudioResponse.case_id == case_id,
+            AudioResponse.question_id == question_id
+        ).order_by(AudioResponse.version_number.asc()).all()
+        for r in responses:
+            session.expunge(r)
+        return responses
+    finally:
+        session.close()
+
+
+def get_latest_audio_response(case_id: str, question_id: str) -> Optional[AudioResponse]:
+    """
+    Get the latest version of an audio response for a specific question.
+
+    Args:
+        case_id: The case ID
+        question_id: The question ID
+
+    Returns:
+        The latest AudioResponse or None
+    """
+    session = get_session()
+    try:
+        response = session.query(AudioResponse).filter(
+            AudioResponse.case_id == case_id,
+            AudioResponse.question_id == question_id
+        ).order_by(AudioResponse.version_number.desc()).first()
+        if response:
+            session.expunge(response)
+        return response
+    finally:
+        session.close()
 
 
 def init_db():

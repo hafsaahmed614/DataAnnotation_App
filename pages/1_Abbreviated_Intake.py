@@ -2,11 +2,13 @@
 SNF Patient Navigator Case Collection - Abbreviated Intake Page
 
 Shorter intake form capturing essential case information with conversational
-narrative prompts. All questions are in past tense.
+narrative prompts. Supports both typed and audio-recorded answers.
 """
 
 import streamlit as st
-from db import create_case, init_db
+from db import create_case, save_audio_response, init_db
+from auth import require_auth, get_current_username, init_session_state
+from transcribe import transcribe_audio
 
 # Page configuration
 st.set_page_config(
@@ -17,6 +19,11 @@ st.set_page_config(
 
 # Ensure database is initialized
 init_db()
+init_session_state()
+
+# Check authentication
+if not require_auth():
+    st.stop()
 
 # Constants
 US_STATES = [
@@ -37,7 +44,7 @@ GENDER_OPTIONS = ["Female", "Male", "Non-binary", "Other", "Prefer not to say"]
 RACE_OPTIONS = [
     "American Indian or Alaska Native",
     "Asian",
-    "Black or African American", 
+    "Black or African American",
     "Hispanic or Latino",
     "Native Hawaiian or Other Pacific Islander",
     "White",
@@ -90,168 +97,240 @@ ABBREV_QUESTIONS = {
     }
 }
 
+# Initialize session state for form data
+if 'abbrev_answers' not in st.session_state:
+    st.session_state.abbrev_answers = {qid: "" for qid in ABBREV_QUESTIONS}
+if 'abbrev_audio' not in st.session_state:
+    st.session_state.abbrev_audio = {qid: None for qid in ABBREV_QUESTIONS}
+if 'abbrev_transcripts' not in st.session_state:
+    st.session_state.abbrev_transcripts = {qid: None for qid in ABBREV_QUESTIONS}
+
 # Title
 st.title("📝 Abbreviated Intake")
-st.markdown("""
+st.markdown(f"""
+Logged in as: **{get_current_username()}**
+
 This form captures essential case information through a brief set of questions.
 All questions are in **past tense** — please describe what happened in completed cases.
+
+You can **type** your answers or **record audio** which will be automatically transcribed.
 
 *Case start date is automatically set to January 1, 2025.*
 """)
 st.markdown("---")
 
-# Form
-with st.form("abbreviated_intake_form", clear_on_submit=False):
-    
-    # Section 0: User Identification
-    st.header("0. Your Information")
-    st.markdown("*Enter your full name to associate this case with you. Names are case sensitive.*")
+# Section 1: Demographics
+st.header("1. Patient Demographics")
+st.markdown("*All demographic fields are required.*")
 
-    user_name = st.text_input(
-        "Your Full Name",
-        help="Enter your full name exactly as you want it recorded. Use the same name each time to keep your cases together.",
-        placeholder="Enter your full name..."
+col1, col2 = st.columns(2)
+
+with col1:
+    age = st.number_input(
+        "Age at SNF Stay",
+        min_value=0,
+        max_value=120,
+        value=None,
+        help="Patient's age in years during the SNF stay",
+        placeholder="Enter age...",
+        key="abbrev_age"
     )
-    
-    st.markdown("---")
-    
-    # Section 1: Demographics
-    st.header("1. Patient Demographics")
-    st.markdown("*All demographic fields are required.*")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        age = st.number_input(
-            "Age at SNF Stay",
-            min_value=0,
-            max_value=120,
-            value=None,
-            help="Patient's age in years during the SNF stay",
-            placeholder="Enter age..."
+
+    gender = st.selectbox(
+        "Gender",
+        options=[""] + GENDER_OPTIONS,
+        index=0,
+        help="Patient's gender",
+        key="abbrev_gender"
+    )
+
+with col2:
+    race = st.selectbox(
+        "Race",
+        options=[""] + RACE_OPTIONS,
+        index=0,
+        help="Patient's race/ethnicity",
+        key="abbrev_race"
+    )
+
+    state = st.selectbox(
+        "SNF State",
+        options=[""] + US_STATES,
+        index=0,
+        help="State where the SNF is located",
+        key="abbrev_state"
+    )
+
+st.markdown("---")
+
+# Section 2: Narrative Questions with Audio Support
+st.header("2. Case Narrative")
+st.markdown("*Answer by typing or recording audio. Audio will be transcribed automatically.*")
+
+for qid, question in ABBREV_QUESTIONS.items():
+    st.subheader(question["label"])
+    st.markdown(f"*{question['prompt']}*")
+
+    # Input method selector
+    input_method = st.radio(
+        f"Answer method for {question['label']}:",
+        ["Type", "Record Audio"],
+        key=f"method_{qid}",
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+
+    if input_method == "Record Audio":
+        # Audio recording
+        audio_value = st.audio_input(
+            f"Record your answer for: {question['label']}",
+            key=f"audio_{qid}"
         )
-        
-        gender = st.selectbox(
-            "Gender",
-            options=[""] + GENDER_OPTIONS,
-            index=0,
-            help="Patient's gender"
-        )
-    
-    with col2:
-        race = st.selectbox(
-            "Race",
-            options=[""] + RACE_OPTIONS,
-            index=0,
-            help="Patient's race/ethnicity"
-        )
-        
-        state = st.selectbox(
-            "SNF State",
-            options=[""] + US_STATES,
-            index=0,
-            help="State where the SNF is located"
-        )
-    
-    st.markdown("---")
-    
-    # Section 2: Narrative Questions
-    st.header("2. Case Narrative")
-    st.markdown("*Please provide detailed responses to each question.*")
-    
-    answers = {}
-    
-    for qid, question in ABBREV_QUESTIONS.items():
-        st.subheader(question["label"])
-        answers[qid] = st.text_area(
+
+        if audio_value is not None:
+            audio_bytes = audio_value.read()
+            st.session_state.abbrev_audio[qid] = audio_bytes
+            st.audio(audio_bytes, format="audio/wav")
+
+            # Transcribe button
+            if st.button(f"Transcribe", key=f"transcribe_{qid}"):
+                transcript = transcribe_audio(audio_bytes)
+                if transcript:
+                    st.session_state.abbrev_transcripts[qid] = transcript
+                    st.session_state.abbrev_answers[qid] = transcript
+                    st.success("Transcription complete!")
+                    st.rerun()
+
+        # Show transcript if available
+        if st.session_state.abbrev_transcripts[qid]:
+            st.markdown("**Auto-transcribed:**")
+            st.info(st.session_state.abbrev_transcripts[qid])
+
+            # Editable transcript
+            edited = st.text_area(
+                "Edit transcript if needed:",
+                value=st.session_state.abbrev_answers[qid],
+                height=120,
+                key=f"edit_{qid}",
+                help=question["help"]
+            )
+            st.session_state.abbrev_answers[qid] = edited
+    else:
+        # Text input
+        text_answer = st.text_area(
             question["prompt"],
+            value=st.session_state.abbrev_answers[qid],
             height=120,
             help=question["help"],
-            key=f"narrative_{qid}"
+            key=f"text_{qid}",
+            label_visibility="collapsed"
         )
-    
+        st.session_state.abbrev_answers[qid] = text_answer
+
     st.markdown("---")
-    
-    # Section 3: Services and SNF Days
-    st.header("3. Services & Duration")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        services_discussed = st.text_area(
-            "Services Discussed",
-            height=100,
-            help="List all services that were discussed with the patient/family",
-            placeholder="e.g., Physical therapy, occupational therapy, home health aide, meal delivery..."
-        )
-    
-    with col2:
-        services_accepted = st.text_area(
-            "Services Accepted",
-            height=100,
-            help="List which services the patient/family agreed to accept",
-            placeholder="e.g., Physical therapy 3x/week, home health aide..."
-        )
-    
-    snf_days = st.number_input(
-        "How many days was the patient in the SNF?",
-        min_value=0,
-        max_value=365,
-        value=None,
-        help="Total number of days from admission to discharge"
+
+# Section 3: Services and SNF Days
+st.header("3. Services & Duration")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    services_discussed = st.text_area(
+        "Services Discussed",
+        height=100,
+        help="List all services that were discussed with the patient/family",
+        placeholder="e.g., Physical therapy, occupational therapy, home health aide, meal delivery...",
+        key="abbrev_services_discussed"
     )
-    
-    st.markdown("---")
-    
-    # Submit button
-    submitted = st.form_submit_button("💾 Save Case", use_container_width=True, type="primary")
-    
-    if submitted:
-        # Validation
-        errors = []
 
-        if not user_name or not user_name.strip():
-            errors.append("Your Full Name is required")
-        if age is None:
-            errors.append("Age at SNF Stay is required")
-        if not gender:
-            errors.append("Gender is required")
-        if not race:
-            errors.append("Race is required")
-        if not state:
-            errors.append("SNF State is required")
-        
-        if errors:
-            for error in errors:
-                st.error(f"❌ {error}")
-        else:
-            try:
-                # Create case
-                create_case(
-                    intake_version="abbrev",
-                    user_name=user_name.strip(),
-                    age_at_snf_stay=int(age),
-                    gender=gender,
-                    race=race,
-                    state=state,
-                    snf_days=int(snf_days) if snf_days is not None else None,
-                    services_discussed=services_discussed if services_discussed else None,
-                    services_accepted=services_accepted if services_accepted else None,
-                    answers=answers
-                )
+with col2:
+    services_accepted = st.text_area(
+        "Services Accepted",
+        height=100,
+        help="List which services the patient/family agreed to accept",
+        placeholder="e.g., Physical therapy 3x/week, home health aide...",
+        key="abbrev_services_accepted"
+    )
 
-                st.success(f"✅ Case saved successfully!")
-                st.info(f"View your cases in the **Case Viewer** using your name: **{user_name.strip()}**")
+snf_days = st.number_input(
+    "How many days was the patient in the SNF?",
+    min_value=0,
+    max_value=365,
+    value=None,
+    help="Total number of days from admission to discharge",
+    key="abbrev_snf_days"
+)
 
-            except Exception as e:
-                st.error(f"❌ Error saving case: {str(e)}")
+st.markdown("---")
+
+# Submit button
+if st.button("💾 Save Case", use_container_width=True, type="primary"):
+    # Validation
+    errors = []
+
+    if age is None:
+        errors.append("Age at SNF Stay is required")
+    if not gender:
+        errors.append("Gender is required")
+    if not race:
+        errors.append("Race is required")
+    if not state:
+        errors.append("SNF State is required")
+
+    if errors:
+        for error in errors:
+            st.error(f"❌ {error}")
+    else:
+        try:
+            # Get current username
+            user_name = get_current_username()
+
+            # Create case
+            case_id = create_case(
+                intake_version="abbrev",
+                user_name=user_name,
+                age_at_snf_stay=int(age),
+                gender=gender,
+                race=race,
+                state=state,
+                snf_days=int(snf_days) if snf_days is not None else None,
+                services_discussed=services_discussed if services_discussed else None,
+                services_accepted=services_accepted if services_accepted else None,
+                answers=st.session_state.abbrev_answers
+            )
+
+            # Save audio responses for questions that have audio
+            for qid in ABBREV_QUESTIONS:
+                audio_data = st.session_state.abbrev_audio.get(qid)
+                auto_transcript = st.session_state.abbrev_transcripts.get(qid)
+                edited_transcript = st.session_state.abbrev_answers.get(qid)
+
+                if audio_data or auto_transcript:
+                    save_audio_response(
+                        case_id=case_id,
+                        question_id=qid,
+                        audio_data=audio_data,
+                        auto_transcript=auto_transcript,
+                        edited_transcript=edited_transcript if edited_transcript != auto_transcript else None
+                    )
+
+            st.success(f"✅ Case saved successfully!")
+            st.info(f"View your cases in the **Case Viewer**.")
+
+            # Clear form data
+            st.session_state.abbrev_answers = {qid: "" for qid in ABBREV_QUESTIONS}
+            st.session_state.abbrev_audio = {qid: None for qid in ABBREV_QUESTIONS}
+            st.session_state.abbrev_transcripts = {qid: None for qid in ABBREV_QUESTIONS}
+
+        except Exception as e:
+            st.error(f"❌ Error saving case: {str(e)}")
 
 # Sidebar info
 with st.sidebar:
     st.markdown("### Abbreviated Intake")
+    st.markdown(f"**User:** {get_current_username()}")
     st.markdown("""
     This shorter form captures:
-    - Your full name
     - Patient demographics
     - Case summary
     - Discharge planning details
@@ -260,10 +339,17 @@ with st.sidebar:
     """)
 
     st.markdown("---")
+    st.markdown("### Audio Recording")
+    st.markdown("""
+    - Click **Record Audio** to speak your answer
+    - Click **Transcribe** to convert to text
+    - Edit the transcript if needed
+    - All versions are saved
+    """)
+
+    st.markdown("---")
     st.markdown("### Tips")
     st.markdown("""
-    - Enter your full name first
-    - Names are **case sensitive**
     - Answer in **past tense**
     - Be as detailed as possible
     - All demographics are required

@@ -1,13 +1,19 @@
 """
 SNF Patient Navigator Case Collection - Case Viewer Page
 
-Search and view saved cases. Regular users can only view their own cases.
+Search and view saved cases with transcript version history.
+Requires authentication - users can only view their own cases.
 Admin users can view all cases with the admin password.
 """
 
 import streamlit as st
 import json
-from db import get_case_by_id, get_cases_by_user_name, get_all_user_names, init_db
+from db import (
+    get_case_by_id, get_cases_by_user_name, get_all_user_names,
+    get_audio_responses_for_case, get_audio_response_versions,
+    init_db
+)
+from auth import require_auth, get_current_username, is_authenticated, init_session_state
 
 # Page configuration
 st.set_page_config(
@@ -18,6 +24,11 @@ st.set_page_config(
 
 # Ensure database is initialized
 init_db()
+init_session_state()
+
+# Check authentication
+if not require_auth():
+    st.stop()
 
 # Get admin password from secrets (if configured)
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", None)
@@ -33,7 +44,7 @@ QUESTION_LABELS = {
     "aq6": "SNF Discharge Conditions",
     "aq7": "HHA Involvement",
     "aq8": "Information Shared with HHA",
-    
+
     # Full intake questions
     "q6": "Case Summary",
     "q7": "Referral Source and Expectation",
@@ -78,7 +89,53 @@ ABBREV_SECTIONS = {
 }
 
 
-def display_case(case, case_number=None):
+def display_audio_versions(case_id: str, question_id: str):
+    """Display all transcript versions for a question with audio."""
+    versions = get_audio_response_versions(case_id, question_id)
+
+    if not versions:
+        return
+
+    st.markdown("**🎙️ Audio Transcript Versions:**")
+
+    for v in versions:
+        with st.expander(f"Version {v.version_number} ({v.created_at.strftime('%Y-%m-%d %H:%M')})"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**Original Transcript (Auto):**")
+                if v.auto_transcript:
+                    st.text_area(
+                        "Auto transcript",
+                        value=v.auto_transcript,
+                        height=100,
+                        disabled=True,
+                        key=f"auto_{v.id}",
+                        label_visibility="collapsed"
+                    )
+                else:
+                    st.info("No auto-transcript")
+
+            with col2:
+                st.markdown("**Edited Transcript:**")
+                if v.edited_transcript:
+                    st.text_area(
+                        "Edited transcript",
+                        value=v.edited_transcript,
+                        height=100,
+                        disabled=True,
+                        key=f"edited_{v.id}",
+                        label_visibility="collapsed"
+                    )
+                else:
+                    st.info("No edits")
+
+            # Play audio if available
+            if v.audio_data:
+                st.audio(v.audio_data, format="audio/wav")
+
+
+def display_case(case, case_number=None, show_versions=False):
     """Display a single case with all its details."""
 
     # Case metadata header
@@ -86,129 +143,145 @@ def display_case(case, case_number=None):
         st.header(f"Case {case_number}")
     else:
         st.header(f"Case")
-    
+
     # Metadata columns
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
         st.metric("Intake Type", "Abbreviated" if case.intake_version == "abbrev" else "Full")
-    
+
     with col2:
         st.metric("Created", case.created_at.strftime("%Y-%m-%d %H:%M") if case.created_at else "N/A")
-    
+
     with col3:
         st.metric("Case Start Date", case.case_start_date.strftime("%Y-%m-%d") if case.case_start_date else "N/A")
-    
+
     with col4:
         st.metric("SNF Days", case.snf_days if case.snf_days else "—")
-    
+
     st.markdown("---")
-    
+
     # Demographics section
     st.subheader("👤 Demographics")
-    
+
     demo_col1, demo_col2, demo_col3, demo_col4 = st.columns(4)
-    
+
     with demo_col1:
         st.markdown(f"**Age at SNF Stay**")
         st.markdown(f"{case.age_at_snf_stay} years")
-    
+
     with demo_col2:
         st.markdown(f"**Gender**")
         st.markdown(f"{case.gender}")
-    
+
     with demo_col3:
         st.markdown(f"**Race**")
         st.markdown(f"{case.race}")
-    
+
     with demo_col4:
         st.markdown(f"**SNF State**")
         st.markdown(f"{case.state}")
-    
+
     st.markdown("---")
-    
+
     # Services section
     st.subheader("🏥 Services")
-    
+
     svc_col1, svc_col2 = st.columns(2)
-    
+
     with svc_col1:
         st.markdown("**Services Discussed**")
         if case.services_discussed:
             st.markdown(case.services_discussed)
         else:
             st.markdown("*Not recorded*")
-    
+
     with svc_col2:
         st.markdown("**Services Accepted**")
         if case.services_accepted:
             st.markdown(case.services_accepted)
         else:
             st.markdown("*Not recorded*")
-    
+
     st.markdown("---")
-    
+
     # Narrative responses section
     st.subheader("📝 Narrative Responses")
-    
+
+    # Get audio responses for this case (for version display)
+    audio_responses = {}
+    if show_versions:
+        all_audio = get_audio_responses_for_case(case.case_id)
+        for ar in all_audio:
+            if ar.question_id not in audio_responses:
+                audio_responses[ar.question_id] = []
+            audio_responses[ar.question_id].append(ar)
+
     # Parse answers JSON
     try:
         answers = json.loads(case.answers_json) if case.answers_json else {}
     except json.JSONDecodeError:
         answers = {}
-    
+
     if answers:
         # Determine which sections to use based on intake type
         sections = ABBREV_SECTIONS if case.intake_version == "abbrev" else FULL_SECTIONS
-        
+
         # Render by section
         for section_name, question_ids in sections.items():
             # Check if any questions in this section have answers
             section_has_content = any(
-                qid in answers and answers[qid].strip() 
+                qid in answers and answers[qid].strip()
                 for qid in question_ids
             )
-            
+
             if section_has_content:
                 st.markdown(f"### 📌 {section_name}")
-                
+
                 for qid in question_ids:
                     if qid in answers and answers[qid].strip():
                         label = QUESTION_LABELS.get(qid, qid)
                         st.markdown(f"**{label}** *(ID: {qid})*")
-                        
+
                         # Display answer in a nice box
                         st.info(answers[qid])
-                
+
+                        # Show transcript versions if available and requested
+                        if show_versions and qid in audio_responses:
+                            display_audio_versions(case.case_id, qid)
+
                 st.markdown("")
-        
+
         # Check for any answers that don't fit in sections
         section_qids = set()
         for qids in sections.values():
             section_qids.update(qids)
-        
+
         other_answers = {k: v for k, v in answers.items() if k not in section_qids and v.strip()}
-        
+
         if other_answers:
             st.markdown("### 📌 Other Responses")
             for qid, answer in other_answers.items():
                 label = QUESTION_LABELS.get(qid, qid)
                 st.markdown(f"**{label}** *(ID: {qid})*")
                 st.info(answer)
+
+                if show_versions and qid in audio_responses:
+                    display_audio_versions(case.case_id, qid)
     else:
         st.info("No narrative responses recorded for this case.")
-    
+
     st.markdown("---")
-    
+
     # Export section
     st.subheader("📥 Export")
-    
+
     # Prepare export data
     export_data = case.to_dict()
     export_json = json.dumps(export_data, indent=2, default=str)
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.download_button(
             label="📥 Download Case JSON",
@@ -217,7 +290,7 @@ def display_case(case, case_number=None):
             mime="application/json",
             use_container_width=True
         )
-    
+
     with col2:
         with st.expander("👁️ View Raw JSON"):
             st.json(export_data)
@@ -225,8 +298,15 @@ def display_case(case, case_number=None):
 
 # Title
 st.title("🔍 Case Viewer")
-st.markdown("View saved cases by entering your full name or using admin access.")
+st.markdown(f"Logged in as: **{get_current_username()}**")
 st.markdown("---")
+
+# Show transcript versions checkbox
+show_versions = st.checkbox(
+    "Show transcript version history",
+    value=False,
+    help="Display all versions of audio transcripts (original and edited)"
+)
 
 # Access mode selection
 access_mode = st.radio(
@@ -236,56 +316,37 @@ access_mode = st.radio(
 )
 
 if access_mode == "View My Cases":
-    # User mode - show only their cases
-    st.markdown("### Enter Your Full Name")
+    # User mode - show only their cases (using logged-in username)
+    current_user = get_current_username()
+    st.markdown(f"### Your Cases")
 
-    # Initialize session state for user search
-    if 'user_search_name' not in st.session_state:
-        st.session_state.user_search_name = None
-    if 'user_cases' not in st.session_state:
-        st.session_state.user_cases = None
+    # Get cases for current user
+    user_cases = get_cases_by_user_name(current_user)
 
-    user_name_input = st.text_input(
-        "Your Full Name",
-        placeholder="Enter the full name you used when creating cases...",
-        help="Names are case sensitive - enter your name exactly as you did when creating cases"
-    )
+    if user_cases:
+        st.success(f"Found {len(user_cases)} case(s)")
+        st.markdown("---")
 
-    if st.button("🔍 View My Cases", use_container_width=True, type="primary"):
-        if user_name_input and user_name_input.strip():
-            # Store search in session state
-            st.session_state.user_search_name = user_name_input.strip()
-            st.session_state.user_cases = get_cases_by_user_name(user_name_input.strip())
-        else:
-            st.error("Please enter your full name.")
+        # Let user select which case to view (numbered Case 1, Case 2, etc.)
+        case_options = {}
+        for idx, c in enumerate(user_cases, start=1):
+            label = f"Case {idx} ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}"
+            case_options[label] = (c.case_id, idx)
 
-    # Display results from session state (persists across reruns)
-    if st.session_state.user_cases is not None:
-        if st.session_state.user_cases:
-            st.success(f"Found {len(st.session_state.user_cases)} case(s) for: {st.session_state.user_search_name}")
-            st.markdown("---")
+        selected_case_label = st.selectbox(
+            "Select a case to view:",
+            options=list(case_options.keys())
+        )
 
-            # Let user select which case to view (numbered Case 1, Case 2, etc.)
-            case_options = {}
-            for idx, c in enumerate(st.session_state.user_cases, start=1):
-                label = f"Case {idx} ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}"
-                case_options[label] = (c.case_id, idx)
+        if selected_case_label:
+            selected_case_id, case_num = case_options[selected_case_label]
+            selected_case = get_case_by_id(selected_case_id)
 
-            selected_case_label = st.selectbox(
-                "Select a case to view:",
-                options=list(case_options.keys())
-            )
-
-            if selected_case_label:
-                selected_case_id, case_num = case_options[selected_case_label]
-                selected_case = get_case_by_id(selected_case_id)
-
-                if selected_case:
-                    st.markdown("---")
-                    display_case(selected_case, case_number=case_num)
-        else:
-            st.warning(f"No cases found for: {st.session_state.user_search_name}")
-            st.info("Make sure you're using the exact same name (case sensitive) you entered when creating cases.")
+            if selected_case:
+                st.markdown("---")
+                display_case(selected_case, case_number=case_num, show_versions=show_versions)
+    else:
+        st.info("You haven't created any cases yet. Go to **Abbreviated Intake** or **Full Intake** to create your first case.")
 
 else:
     # Admin mode - show all cases by person
@@ -341,7 +402,8 @@ else:
 
                         selected_case_label = st.selectbox(
                             "Select a case to view:",
-                            options=list(case_options.keys())
+                            options=list(case_options.keys()),
+                            key="admin_case_select"
                         )
 
                         if selected_case_label:
@@ -351,7 +413,7 @@ else:
                             if selected_case:
                                 st.markdown("---")
                                 st.markdown(f"**Created by:** {selected_case.user_name}")
-                                display_case(selected_case, case_number=case_num)
+                                display_case(selected_case, case_number=case_num, show_versions=show_versions)
                     else:
                         st.info(f"No cases found for {selected_user}.")
             else:
@@ -360,11 +422,12 @@ else:
 # Sidebar info
 with st.sidebar:
     st.markdown("### Case Viewer")
+    st.markdown(f"**User:** {get_current_username()}")
     st.markdown("""
-    **User Mode:**
-    - Enter your full name
-    - View only cases you created
+    **View My Cases:**
+    - See all your cases
     - Cases numbered in order (Case 1, Case 2, etc.)
+    - View transcript version history
 
     **Admin Mode:**
     - Enter admin password
@@ -373,10 +436,18 @@ with st.sidebar:
     """)
 
     st.markdown("---")
+    st.markdown("### Transcript Versions")
+    st.markdown("""
+    Enable **"Show transcript version history"** to see:
+    - Original auto-transcription
+    - Edited versions
+    - All changes over time
+    - Audio playback
+    """)
+
+    st.markdown("---")
     st.markdown("### Tips")
     st.markdown("""
-    - Names are **case sensitive**
-    - Use the exact name you entered when creating cases
     - Download cases as JSON for offline review
     - Contact admin for full access
     """)
