@@ -646,7 +646,7 @@ def generate_follow_up_questions(
                 {"role": "user", "content": user_message}
             ],
             temperature=0.7,
-            max_tokens=4000
+            max_completion_tokens=4000
         )
 
         response_text = response.choices[0].message.content
