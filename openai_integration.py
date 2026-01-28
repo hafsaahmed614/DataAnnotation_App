@@ -640,7 +640,7 @@ def generate_follow_up_questions(
         client = openai.OpenAI(api_key=api_key)
 
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5-mini-2025-08-07",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
