@@ -108,16 +108,49 @@ class User(Base):
         }
 
 
+class FollowUpQuestion(Base):
+    """
+    SQLAlchemy model for AI-generated follow-up questions.
+    Each row represents one follow-up question for a case.
+    """
+    __tablename__ = "follow_up_questions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    case_id = Column(String(36), ForeignKey("cases.case_id"), nullable=False)
+    section = Column(String(1), nullable=False)  # "A", "B", or "C"
+    question_number = Column(Integer, nullable=False)  # 1, 2, 3, etc. within section
+    question_text = Column(Text, nullable=False)  # The AI-generated question
+    answer_text = Column(Text, nullable=True)  # User's answer (nullable if not yet answered)
+    created_at = Column(DateTime, default=lambda: datetime.utcnow(), nullable=False)
+    answered_at = Column(DateTime, nullable=True)  # When user answered
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert follow-up question to dictionary."""
+        return {
+            "id": self.id,
+            "case_id": self.case_id,
+            "section": self.section,
+            "question_number": self.question_number,
+            "question_text": self.question_text,
+            "answer_text": self.answer_text,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "answered_at": self.answered_at.isoformat() if self.answered_at else None,
+            "is_answered": self.answer_text is not None
+        }
+
+
 class AudioResponse(Base):
     """
     SQLAlchemy model for audio recordings and transcripts.
     Supports versioning - each edit creates a new row with incremented version_number.
+    Can be linked to case questions OR follow-up questions.
     """
     __tablename__ = "audio_responses"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     case_id = Column(String(36), ForeignKey("cases.case_id"), nullable=False)
-    question_id = Column(String(20), nullable=False)  # e.g., "aq1", "q6"
+    question_id = Column(String(20), nullable=True)  # e.g., "aq1", "q6" - for case questions
+    follow_up_question_id = Column(String(36), ForeignKey("follow_up_questions.id"), nullable=True)  # For follow-up questions
     audio_path = Column(Text, nullable=True)  # Path in Supabase Storage
     audio_data = Column(LargeBinary, nullable=True)  # Store audio bytes directly (fallback)
     auto_transcript = Column(Text, nullable=True)  # Original Whisper transcription
@@ -131,6 +164,7 @@ class AudioResponse(Base):
             "id": self.id,
             "case_id": self.case_id,
             "question_id": self.question_id,
+            "follow_up_question_id": self.follow_up_question_id,
             "audio_path": self.audio_path,
             "has_audio": self.audio_data is not None or self.audio_path is not None,
             "auto_transcript": self.auto_transcript,
@@ -667,6 +701,279 @@ def get_all_user_names() -> List[str]:
     try:
         result = session.query(Case.user_name).distinct().order_by(Case.user_name.asc()).all()
         return [r[0] for r in result]
+    finally:
+        session.close()
+
+
+# ============== Follow-Up Question Functions ==============
+
+def create_follow_up_questions(case_id: str, questions: List[Dict[str, Any]]) -> List[str]:
+    """
+    Create multiple follow-up questions for a case.
+
+    Args:
+        case_id: The case ID these questions belong to
+        questions: List of dicts with keys: section, question_number, question_text
+
+    Returns:
+        List of created question IDs
+    """
+    session = get_session()
+    try:
+        question_ids = []
+        for q in questions:
+            follow_up = FollowUpQuestion(
+                case_id=case_id,
+                section=q["section"],
+                question_number=q["question_number"],
+                question_text=q["question_text"]
+            )
+            session.add(follow_up)
+            session.flush()  # Get the ID
+            question_ids.append(follow_up.id)
+        session.commit()
+        return question_ids
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def get_follow_up_questions_for_case(case_id: str) -> List[FollowUpQuestion]:
+    """
+    Get all follow-up questions for a case, ordered by section and question number.
+
+    Args:
+        case_id: The case ID
+
+    Returns:
+        List of FollowUpQuestion objects
+    """
+    session = get_session()
+    try:
+        questions = session.query(FollowUpQuestion).filter(
+            FollowUpQuestion.case_id == case_id
+        ).order_by(
+            FollowUpQuestion.section.asc(),
+            FollowUpQuestion.question_number.asc()
+        ).all()
+        for q in questions:
+            session.expunge(q)
+        return questions
+    finally:
+        session.close()
+
+
+def get_unanswered_follow_up_questions(case_id: str) -> List[FollowUpQuestion]:
+    """
+    Get unanswered follow-up questions for a case.
+
+    Args:
+        case_id: The case ID
+
+    Returns:
+        List of unanswered FollowUpQuestion objects
+    """
+    session = get_session()
+    try:
+        questions = session.query(FollowUpQuestion).filter(
+            FollowUpQuestion.case_id == case_id,
+            FollowUpQuestion.answer_text.is_(None)
+        ).order_by(
+            FollowUpQuestion.section.asc(),
+            FollowUpQuestion.question_number.asc()
+        ).all()
+        for q in questions:
+            session.expunge(q)
+        return questions
+    finally:
+        session.close()
+
+
+def update_follow_up_answer(question_id: str, answer_text: str) -> bool:
+    """
+    Update the answer for a follow-up question.
+
+    Args:
+        question_id: The follow-up question ID
+        answer_text: The user's answer
+
+    Returns:
+        True if updated successfully, False if question not found
+    """
+    session = get_session()
+    try:
+        question = session.query(FollowUpQuestion).filter(
+            FollowUpQuestion.id == question_id
+        ).first()
+        if question:
+            question.answer_text = answer_text
+            question.answered_at = datetime.utcnow()
+            session.commit()
+            return True
+        return False
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def get_cases_with_pending_follow_ups(user_name: str) -> List[Dict[str, Any]]:
+    """
+    Get cases that have unanswered follow-up questions for a user.
+
+    Args:
+        user_name: The user's name (case insensitive)
+
+    Returns:
+        List of dicts with case info and pending question count
+    """
+    session = get_session()
+    try:
+        from sqlalchemy import func
+
+        # Get all cases for the user that have follow-up questions
+        cases = session.query(Case).filter(
+            func.lower(Case.user_name) == user_name.lower()
+        ).order_by(Case.created_at.desc()).all()
+
+        result = []
+        for case in cases:
+            # Count total and unanswered questions
+            total_questions = session.query(FollowUpQuestion).filter(
+                FollowUpQuestion.case_id == case.case_id
+            ).count()
+
+            if total_questions > 0:
+                unanswered = session.query(FollowUpQuestion).filter(
+                    FollowUpQuestion.case_id == case.case_id,
+                    FollowUpQuestion.answer_text.is_(None)
+                ).count()
+
+                result.append({
+                    "case_id": case.case_id,
+                    "intake_version": case.intake_version,
+                    "created_at": case.created_at,
+                    "total_questions": total_questions,
+                    "answered_questions": total_questions - unanswered,
+                    "unanswered_questions": unanswered,
+                    "is_complete": unanswered == 0
+                })
+
+        return result
+    finally:
+        session.close()
+
+
+def get_follow_up_question_by_id(question_id: str) -> Optional[FollowUpQuestion]:
+    """
+    Get a single follow-up question by ID.
+
+    Args:
+        question_id: The follow-up question ID
+
+    Returns:
+        FollowUpQuestion object or None
+    """
+    session = get_session()
+    try:
+        question = session.query(FollowUpQuestion).filter(
+            FollowUpQuestion.id == question_id
+        ).first()
+        if question:
+            session.expunge(question)
+        return question
+    finally:
+        session.close()
+
+
+def case_has_follow_up_questions(case_id: str) -> bool:
+    """
+    Check if a case has any follow-up questions generated.
+
+    Args:
+        case_id: The case ID
+
+    Returns:
+        True if case has follow-up questions, False otherwise
+    """
+    session = get_session()
+    try:
+        count = session.query(FollowUpQuestion).filter(
+            FollowUpQuestion.case_id == case_id
+        ).count()
+        return count > 0
+    finally:
+        session.close()
+
+
+# ============== Follow-Up Audio Functions ==============
+
+def save_follow_up_audio_response(
+    case_id: str,
+    follow_up_question_id: str,
+    audio_data: Optional[bytes] = None,
+    audio_path: Optional[str] = None,
+    auto_transcript: Optional[str] = None,
+    edited_transcript: Optional[str] = None
+) -> str:
+    """
+    Save an audio response for a follow-up question. Creates version 1.
+
+    Args:
+        case_id: The case this response belongs to
+        follow_up_question_id: The follow-up question ID
+        audio_data: Raw audio bytes (optional)
+        audio_path: Path to audio in storage (optional)
+        auto_transcript: Original Whisper transcription
+        edited_transcript: User-edited transcript (optional)
+
+    Returns:
+        The audio response ID
+    """
+    session = get_session()
+    try:
+        response = AudioResponse(
+            case_id=case_id,
+            follow_up_question_id=follow_up_question_id,
+            audio_data=audio_data,
+            audio_path=audio_path,
+            auto_transcript=auto_transcript,
+            edited_transcript=edited_transcript,
+            version_number=1
+        )
+        session.add(response)
+        session.commit()
+        return response.id
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def get_latest_follow_up_audio(case_id: str, follow_up_question_id: str) -> Optional[AudioResponse]:
+    """
+    Get the latest audio response for a follow-up question.
+
+    Args:
+        case_id: The case ID
+        follow_up_question_id: The follow-up question ID
+
+    Returns:
+        The latest AudioResponse or None
+    """
+    session = get_session()
+    try:
+        response = session.query(AudioResponse).filter(
+            AudioResponse.case_id == case_id,
+            AudioResponse.follow_up_question_id == follow_up_question_id
+        ).order_by(AudioResponse.version_number.desc()).first()
+        if response:
+            session.expunge(response)
+        return response
     finally:
         session.close()
 

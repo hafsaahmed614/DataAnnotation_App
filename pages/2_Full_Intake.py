@@ -6,9 +6,10 @@ Supports both typed and audio-recorded answers with automatic transcription.
 """
 
 import streamlit as st
-from db import create_case, save_audio_response, init_db, get_setting
+from db import create_case, save_audio_response, init_db, get_setting, create_follow_up_questions
 from auth import require_auth, get_current_username, init_session_state
 from transcribe import transcribe_audio
+from openai_integration import generate_follow_up_questions
 
 # Page configuration
 st.set_page_config(
@@ -442,7 +443,39 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
                     )
 
             st.success(f"✅ Case saved successfully!")
-            st.info(f"View your cases in the **Case Viewer**.")
+
+            # Generate follow-up questions using OpenAI
+            with st.spinner("Generating follow-up questions..."):
+                demographics = {
+                    "age_at_snf_stay": int(age),
+                    "gender": gender,
+                    "race": race,
+                    "state": state
+                }
+                services = {
+                    "snf_days": int(snf_days) if snf_days is not None else None,
+                    "services_discussed": services_discussed if services_discussed else None,
+                    "services_accepted": services_accepted if services_accepted else None
+                }
+
+                success, questions, error_msg = generate_follow_up_questions(
+                    case_id=case_id,
+                    intake_version="full",
+                    demographics=demographics,
+                    services=services,
+                    answers=st.session_state.full_answers
+                )
+
+                if success and questions:
+                    # Store questions in database
+                    create_follow_up_questions(case_id, questions)
+                    st.success(f"✅ Generated {len(questions)} follow-up questions!")
+                    st.info("📋 Go to **Follow-On Questions** page to answer them.")
+                    # Store case_id for redirect
+                    st.session_state.last_saved_case_id = case_id
+                else:
+                    st.warning(f"⚠️ Could not generate follow-up questions: {error_msg}")
+                    st.info("You can still view your case in the **Case Viewer**.")
 
             # Clear form data
             st.session_state.full_answers = {qid: "" for qid in FULL_QUESTIONS}
