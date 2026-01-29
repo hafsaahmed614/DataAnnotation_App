@@ -434,8 +434,11 @@ with main_col:
                 answer_text = st.session_state.followup_answers[selected_case_id].get(q_id, "").strip()
 
                 if not answer_text:
-                    # Empty answer, skip
-                    empty_count += 1
+                    # Empty answer, skip - but count if already answered in DB
+                    if question.answer_text:
+                        already_saved_count += 1
+                    else:
+                        empty_count += 1
                 elif question.answer_text == answer_text:
                     # Already saved with same value
                     already_saved_count += 1
@@ -446,17 +449,19 @@ with main_col:
                     else:
                         error_count += 1
 
-        # Calculate total answered
-        total_answered = saved_count + already_saved_count
+        # Calculate total answered (from database)
+        total_answered = sum(1 for q in questions if q.answer_text is not None) + saved_count
 
         if saved_count > 0:
-            st.success(f"✅ Saved {saved_count} new answer(s)! Total answered: {total_answered}/{total_questions}")
+            st.success(f"✅ Saved {saved_count} new answer(s)! Total: {total_answered}/{total_questions} answered")
+        elif total_answered == total_questions:
+            st.success(f"✅ All {total_questions} questions already answered!")
         elif already_saved_count > 0:
-            st.success(f"✅ All {already_saved_count} answer(s) already saved!")
+            st.success(f"✅ No new changes. {total_answered}/{total_questions} questions answered.")
         elif empty_count == total_questions:
             st.warning("No answers to save. Please answer some questions first.")
         else:
-            st.info("No new answers to save.")
+            st.info(f"No new answers to save. {total_answered}/{total_questions} questions answered.")
         if error_count > 0:
             st.warning(f"⚠️ {error_count} answer(s) could not be saved.")
 
