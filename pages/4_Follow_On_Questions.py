@@ -184,17 +184,10 @@ if not cases_with_followups:
 # Get case numbers for display
 case_numbers = get_case_numbers_by_type(username)
 
-# Check if we have a case from redirect (just saved)
-if 'last_saved_case_id' in st.session_state and st.session_state.last_saved_case_id:
-    st.session_state.selected_followup_case = st.session_state.last_saved_case_id
-    st.session_state.last_saved_case_id = None
-
-# Case selection section
-st.header("1. Select a Case")
-
 # Create a formatted list of cases for selection with new naming format
 case_options = []
 case_id_map = {}
+reverse_case_id_map = {}  # Map case_id back to display name
 for case_info in cases_with_followups:
     case_id = case_info["case_id"]
     answered = case_info["answered_questions"]
@@ -212,19 +205,32 @@ for case_info in cases_with_followups:
 
     case_options.append(display_name)
     case_id_map[display_name] = case_id
+    reverse_case_id_map[case_id] = display_name
 
-# Case selector - find the index of the currently selected case
-default_index = 0  # "Select a case..." option
-if st.session_state.selected_followup_case:
-    for i, display_name in enumerate(case_options):
-        if case_id_map.get(display_name) == st.session_state.selected_followup_case:
-            default_index = i + 1  # +1 because of "Select a case..." option
-            break
+# Check if we have a case from redirect (just saved)
+# Set the widget's session state key directly to avoid the warning
+if 'last_saved_case_id' in st.session_state and st.session_state.last_saved_case_id:
+    redirect_case_id = st.session_state.last_saved_case_id
+    st.session_state.last_saved_case_id = None
+    # Set the widget key directly if the case exists in our options
+    if redirect_case_id in reverse_case_id_map:
+        st.session_state.case_selector = reverse_case_id_map[redirect_case_id]
+        st.session_state.selected_followup_case = redirect_case_id
+
+# Case selection section
+st.header("1. Select a Case")
+
+# Determine if we need to set a default (only on first load when key doesn't exist)
+if "case_selector" not in st.session_state:
+    # First load - use the selected_followup_case if set, otherwise default to placeholder
+    if st.session_state.selected_followup_case and st.session_state.selected_followup_case in reverse_case_id_map:
+        st.session_state.case_selector = reverse_case_id_map[st.session_state.selected_followup_case]
+    else:
+        st.session_state.case_selector = "Select a case..."
 
 selected_display = st.selectbox(
     "Choose a case to answer follow-up questions:",
     options=["Select a case..."] + case_options,
-    index=default_index,
     key="case_selector"
 )
 
@@ -372,7 +378,8 @@ with main_col:
                 if audio_value is not None:
                     audio_bytes = audio_value.read()
                     st.session_state.followup_audio[selected_case_id][q_id] = audio_bytes
-                    st.audio(audio_bytes, format="audio/wav")
+                    # Use the file's actual MIME type for playback (browsers record in WebM, not WAV)
+                    st.audio(audio_bytes, format=audio_value.type if hasattr(audio_value, 'type') else "audio/webm")
                     st.success("✅ Audio recorded! Click Save to submit.")
                     # Mark that this question has audio (for save logic)
                     st.session_state.followup_answers[selected_case_id][q_id] = "[Audio response]"
@@ -427,8 +434,11 @@ with main_col:
                 answer_text = st.session_state.followup_answers[selected_case_id].get(q_id, "").strip()
 
                 if not answer_text:
-                    # Empty answer, skip
-                    empty_count += 1
+                    # Empty answer, skip - but count if already answered in DB
+                    if question.answer_text:
+                        already_saved_count += 1
+                    else:
+                        empty_count += 1
                 elif question.answer_text == answer_text:
                     # Already saved with same value
                     already_saved_count += 1
@@ -439,17 +449,19 @@ with main_col:
                     else:
                         error_count += 1
 
-        # Calculate total answered
-        total_answered = saved_count + already_saved_count
+        # Calculate total answered (from database)
+        total_answered = sum(1 for q in questions if q.answer_text is not None) + saved_count
 
         if saved_count > 0:
-            st.success(f"✅ Saved {saved_count} new answer(s)! Total answered: {total_answered}/{total_questions}")
+            st.success(f"✅ Saved {saved_count} new answer(s)! Total: {total_answered}/{total_questions} answered")
+        elif total_answered == total_questions:
+            st.success(f"✅ All {total_questions} questions already answered!")
         elif already_saved_count > 0:
-            st.success(f"✅ All {already_saved_count} answer(s) already saved!")
+            st.success(f"✅ No new changes. {total_answered}/{total_questions} questions answered.")
         elif empty_count == total_questions:
             st.warning("No answers to save. Please answer some questions first.")
         else:
-            st.info("No new answers to save.")
+            st.info(f"No new answers to save. {total_answered}/{total_questions} questions answered.")
         if error_count > 0:
             st.warning(f"⚠️ {error_count} answer(s) could not be saved.")
 
