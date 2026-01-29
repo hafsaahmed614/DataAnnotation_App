@@ -935,8 +935,13 @@ def save_follow_up_audio_response(
     """
     session = get_session()
     try:
+        # Use a question_id that identifies this as a follow-up question audio
+        # Format: "fu_<first 12 chars of follow_up_question_id>" to fit in 20 char limit
+        question_id = f"fu_{follow_up_question_id[:12]}"
+
         response = AudioResponse(
             case_id=case_id,
+            question_id=question_id,
             follow_up_question_id=follow_up_question_id,
             audio_data=audio_data,
             audio_path=audio_path,
