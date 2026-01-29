@@ -19,7 +19,6 @@ from db import (
     get_cases_by_user_name
 )
 from auth import require_auth, get_current_username, init_session_state
-from transcribe import transcribe_audio
 
 # Page configuration
 st.set_page_config(
@@ -101,8 +100,6 @@ if 'followup_answers' not in st.session_state:
     st.session_state.followup_answers = {}
 if 'followup_audio' not in st.session_state:
     st.session_state.followup_audio = {}
-if 'followup_transcripts' not in st.session_state:
-    st.session_state.followup_transcripts = {}
 if 'saved_questions' not in st.session_state:
     st.session_state.saved_questions = set()  # Track which questions were just saved
 
@@ -136,27 +133,17 @@ def save_single_answer(case_id: str, q_id: str, answer_text: str, is_na: bool = 
         # Save the answer
         update_follow_up_answer(q_id, answer_text)
 
-        # Save audio if available and not N/A
+        # Save audio if available and not N/A (no transcription - admin only)
         if not is_na:
             audio_data = st.session_state.followup_audio.get(case_id, {}).get(q_id)
-            auto_transcript = st.session_state.followup_transcripts.get(case_id, {}).get(q_id)
 
-            # Auto-transcribe audio for admin review (user doesn't see this)
-            if audio_data and not auto_transcript:
-                try:
-                    auto_transcript = transcribe_audio(audio_data)
-                    if auto_transcript:
-                        st.session_state.followup_transcripts[case_id][q_id] = auto_transcript
-                except Exception:
-                    pass  # Continue saving even if transcription fails
-
-            if audio_data or auto_transcript:
+            if audio_data:
                 save_follow_up_audio_response(
                     case_id=case_id,
                     follow_up_question_id=q_id,
                     audio_data=audio_data,
-                    auto_transcript=auto_transcript,
-                    edited_transcript=None  # User doesn't edit transcript anymore
+                    auto_transcript=None,  # Transcription is admin-only
+                    edited_transcript=None
                 )
 
         # Mark as saved in session state
@@ -175,7 +162,7 @@ Logged in as: **{get_current_username()}**
 Answer the AI-generated follow-up questions for your cases. These questions help capture
 deeper reasoning, timing dynamics, and factors that influenced patient outcomes.
 
-You can **type** your answers or **record audio** which will be automatically transcribed.
+You can **type** your answers or **record audio**.
 """)
 st.markdown("---")
 
@@ -285,7 +272,7 @@ with side_col:
             st.markdown(f"**Discussed:** {case.services_discussed if case.services_discussed else 'N/A'}")
             st.markdown(f"**Accepted:** {case.services_accepted if case.services_accepted else 'N/A'}")
 
-        # Show narrative answers
+        # Show narrative answers - full text, not truncated
         with st.expander("Narrative Answers", expanded=False):
             if case.answers_json:
                 try:
@@ -297,10 +284,18 @@ with side_col:
                         labels = FULL_INTAKE_QUESTION_LABELS
 
                     for qid, answer in answers.items():
-                        if answer:  # Only show non-empty answers
+                        if answer and answer.strip():  # Only show non-empty answers
                             label = labels.get(qid, qid)
                             st.markdown(f"**{label}:**")
-                            st.markdown(f"_{answer[:200]}{'...' if len(answer) > 200 else ''}_")
+                            # Show full answer text, not truncated
+                            st.text_area(
+                                label,
+                                value=answer,
+                                height=150,
+                                disabled=True,
+                                label_visibility="collapsed",
+                                key=f"narrative_{qid}"
+                            )
                             st.markdown("---")
                 except:
                     st.markdown("_Unable to load answers_")
@@ -314,15 +309,10 @@ with main_col:
     if selected_case_id not in st.session_state.followup_answers:
         st.session_state.followup_answers[selected_case_id] = {}
         st.session_state.followup_audio[selected_case_id] = {}
-        st.session_state.followup_transcripts[selected_case_id] = {}
 
         # Pre-populate with existing answers
         for q in questions:
             st.session_state.followup_answers[selected_case_id][q.id] = q.answer_text or ""
-            # Load existing audio transcript if any
-            existing_audio = get_latest_follow_up_audio(selected_case_id, q.id)
-            if existing_audio:
-                st.session_state.followup_transcripts[selected_case_id][q.id] = existing_audio.auto_transcript
 
     # Group questions by section
     current_section = None
@@ -488,11 +478,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### Audio Recording")
-    current_model = get_setting("whisper_model_size", "base")
-    st.markdown(f"**Whisper Model:** {current_model}")
     st.markdown("""
     - Select **Record Audio** for any question
-    - Audio is automatically transcribed on save
     - Click **N/A** if question doesn't apply
     """)
 

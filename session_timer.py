@@ -1,0 +1,197 @@
+"""
+Session Timer Component for SNF Patient Navigator Case Collection App.
+
+Provides auto-save functionality and session timeout warnings for intake forms.
+Streamlit Cloud has a maximum session timeout of ~30 minutes.
+"""
+
+import streamlit as st
+from datetime import datetime, timedelta
+import json
+
+# Session timeout settings (in seconds)
+SESSION_TIMEOUT_SECONDS = 30 * 60  # 30 minutes max for Streamlit Cloud
+WARNING_THRESHOLD_SECONDS = 25 * 60  # Show warning at 25 minutes (5 min before timeout)
+AUTO_SAVE_INTERVAL_SECONDS = 2 * 60  # Auto-save every 2 minutes
+
+
+def init_session_timer():
+    """Initialize session timer state variables."""
+    if 'session_start_time' not in st.session_state:
+        st.session_state.session_start_time = datetime.utcnow()
+    if 'last_activity_time' not in st.session_state:
+        st.session_state.last_activity_time = datetime.utcnow()
+    if 'last_auto_save_time' not in st.session_state:
+        st.session_state.last_auto_save_time = datetime.utcnow()
+
+
+def update_activity_time():
+    """Update the last activity timestamp. Call this when user interacts with form."""
+    st.session_state.last_activity_time = datetime.utcnow()
+
+
+def get_time_remaining() -> int:
+    """
+    Get remaining session time in seconds.
+
+    Returns:
+        Seconds remaining until session timeout
+    """
+    if 'session_start_time' not in st.session_state:
+        init_session_timer()
+
+    elapsed = (datetime.utcnow() - st.session_state.session_start_time).total_seconds()
+    remaining = SESSION_TIMEOUT_SECONDS - elapsed
+    return max(0, int(remaining))
+
+
+def should_show_warning() -> bool:
+    """Check if session timeout warning should be displayed."""
+    remaining = get_time_remaining()
+    return remaining <= (SESSION_TIMEOUT_SECONDS - WARNING_THRESHOLD_SECONDS)
+
+
+def should_auto_save() -> bool:
+    """Check if enough time has passed for auto-save."""
+    if 'last_auto_save_time' not in st.session_state:
+        return False
+
+    elapsed = (datetime.utcnow() - st.session_state.last_auto_save_time).total_seconds()
+    return elapsed >= AUTO_SAVE_INTERVAL_SECONDS
+
+
+def mark_auto_saved():
+    """Mark that an auto-save just occurred."""
+    st.session_state.last_auto_save_time = datetime.utcnow()
+
+
+def format_time_remaining(seconds: int) -> str:
+    """Format seconds as MM:SS string."""
+    minutes = seconds // 60
+    secs = seconds % 60
+    return f"{minutes}:{secs:02d}"
+
+
+def render_session_timer_warning():
+    """
+    Render the session timeout warning banner if needed.
+    Returns True if warning is being shown.
+    """
+    remaining = get_time_remaining()
+
+    if should_show_warning():
+        time_str = format_time_remaining(remaining)
+
+        if remaining <= 60:
+            # Critical warning - less than 1 minute
+            st.error(f"""
+                **Session expiring in {time_str}!**
+
+                Your session will timeout soon. Click **Save Draft** now to avoid losing your work!
+            """)
+        elif remaining <= 180:
+            # Urgent warning - less than 3 minutes
+            st.warning(f"""
+                **Session expiring in {time_str}**
+
+                Please save your draft or submit your case soon to avoid losing work.
+            """)
+        else:
+            # Standard warning - 5 minutes or less
+            st.warning(f"""
+                **Session expires in {time_str}**
+
+                Your work is being auto-saved, but please complete or save your case soon.
+            """)
+        return True
+    return False
+
+
+def render_auto_save_status(last_save_success: bool = True):
+    """
+    Render a subtle auto-save status indicator.
+
+    Args:
+        last_save_success: Whether the last auto-save was successful
+    """
+    if 'last_auto_save_time' in st.session_state:
+        elapsed = (datetime.utcnow() - st.session_state.last_auto_save_time).total_seconds()
+        if elapsed < 5:  # Show for 5 seconds after save
+            if last_save_success:
+                st.caption("Draft auto-saved")
+            else:
+                st.caption("Auto-save failed - please save manually")
+
+
+def get_draft_info_message(draft_updated_at: datetime) -> str:
+    """
+    Generate a message about when the draft was last saved.
+
+    Args:
+        draft_updated_at: The timestamp when draft was last updated
+
+    Returns:
+        Human-readable time string
+    """
+    now = datetime.utcnow()
+    diff = now - draft_updated_at
+
+    if diff.total_seconds() < 60:
+        return "just now"
+    elif diff.total_seconds() < 3600:
+        minutes = int(diff.total_seconds() / 60)
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    elif diff.total_seconds() < 86400:
+        hours = int(diff.total_seconds() / 3600)
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    else:
+        days = int(diff.total_seconds() / 86400)
+        return f"{days} day{'s' if days != 1 else ''} ago"
+
+
+def render_resume_draft_banner(draft, intake_type: str, on_resume_callback=None, on_discard_callback=None):
+    """
+    Render a banner prompting user to resume or discard a saved draft.
+
+    Args:
+        draft: The DraftCase object
+        intake_type: "Abbreviated" or "Full" for display
+        on_resume_callback: Function to call when Resume is clicked
+        on_discard_callback: Function to call when Discard is clicked
+
+    Returns:
+        Tuple of (resume_clicked, discard_clicked)
+    """
+    if draft is None:
+        return False, False
+
+    time_ago = get_draft_info_message(draft.updated_at)
+
+    # Count answered questions
+    answers = json.loads(draft.answers_json) if draft.answers_json else {}
+    answered_count = sum(1 for v in answers.values() if v and v.strip())
+
+    st.info(f"""
+        **You have an unfinished {intake_type} Intake draft** (last saved {time_ago})
+
+        {answered_count} question(s) answered. Would you like to resume or start fresh?
+    """)
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+
+    resume_clicked = False
+    discard_clicked = False
+
+    with col1:
+        if st.button("Resume Draft", type="primary", key="resume_draft_btn"):
+            resume_clicked = True
+            if on_resume_callback:
+                on_resume_callback()
+
+    with col2:
+        if st.button("Start Fresh", key="discard_draft_btn"):
+            discard_clicked = True
+            if on_discard_callback:
+                on_discard_callback()
+
+    return resume_clicked, discard_clicked
