@@ -220,13 +220,14 @@ if 'last_saved_case_id' in st.session_state and st.session_state.last_saved_case
 # Case selection section
 st.header("1. Select a Case")
 
-# Determine if we need to set a default (only on first load when key doesn't exist)
-if "case_selector" not in st.session_state:
-    # First load - use the selected_followup_case if set, otherwise default to placeholder
-    if st.session_state.selected_followup_case and st.session_state.selected_followup_case in reverse_case_id_map:
-        st.session_state.case_selector = reverse_case_id_map[st.session_state.selected_followup_case]
-    else:
-        st.session_state.case_selector = "Select a case..."
+# ALWAYS update case_selector from selected_followup_case if it exists
+# This handles the case where the display name changed (e.g., "4/7" -> "5/7 answered")
+if st.session_state.selected_followup_case and st.session_state.selected_followup_case in reverse_case_id_map:
+    # Update to the new display name (which includes updated status)
+    st.session_state.case_selector = reverse_case_id_map[st.session_state.selected_followup_case]
+elif "case_selector" not in st.session_state:
+    # First load with no selection
+    st.session_state.case_selector = "Select a case..."
 
 selected_display = st.selectbox(
     "Choose a case to answer follow-up questions:",
