@@ -467,7 +467,7 @@ with main_col:
         if saved_count > 0:
             st.success(f"✅ Saved {saved_count} new answer(s)! Total answered: {total_answered}/{total_questions}")
         elif already_saved_count > 0:
-            st.info(f"All {already_saved_count} answer(s) were already saved. No changes needed.")
+            st.success(f"✅ All {already_saved_count} answer(s) already saved!")
         elif empty_count == total_questions:
             st.warning("No answers to save. Please answer some questions first.")
         else:
