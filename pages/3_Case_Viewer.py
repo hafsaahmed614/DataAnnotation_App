@@ -1,7 +1,7 @@
 """
 SNF Patient Navigator Case Collection - Case Viewer Page
 
-Search and view saved cases with transcript version history.
+Search and view saved cases.
 Requires authentication - users can only view their own cases.
 Admin users can view all cases with the admin password.
 """
@@ -10,7 +10,6 @@ import streamlit as st
 import json
 from db import (
     get_case_by_id, get_cases_by_user_name, get_all_user_names,
-    get_audio_responses_for_case, get_audio_response_versions,
     init_db
 )
 from auth import require_auth, get_current_username, is_authenticated, init_session_state
@@ -102,53 +101,7 @@ ABBREV_SECTIONS = {
 }
 
 
-def display_audio_versions(case_id: str, question_id: str):
-    """Display all transcript versions for a question with audio."""
-    versions = get_audio_response_versions(case_id, question_id)
-
-    if not versions:
-        return
-
-    st.markdown("**🎙️ Audio Transcript Versions:**")
-
-    for v in versions:
-        with st.expander(f"Version {v.version_number} ({v.created_at.strftime('%Y-%m-%d %H:%M')})"):
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("**Original Transcript (Auto):**")
-                if v.auto_transcript:
-                    st.text_area(
-                        "Auto transcript",
-                        value=v.auto_transcript,
-                        height=100,
-                        disabled=True,
-                        key=f"auto_{v.id}",
-                        label_visibility="collapsed"
-                    )
-                else:
-                    st.info("No auto-transcript")
-
-            with col2:
-                st.markdown("**Edited Transcript:**")
-                if v.edited_transcript:
-                    st.text_area(
-                        "Edited transcript",
-                        value=v.edited_transcript,
-                        height=100,
-                        disabled=True,
-                        key=f"edited_{v.id}",
-                        label_visibility="collapsed"
-                    )
-                else:
-                    st.info("No edits")
-
-            # Play audio if available
-            if v.audio_data:
-                st.audio(v.audio_data, format="audio/wav")
-
-
-def display_case(case, case_number=None, show_versions=False):
+def display_case(case, case_number=None):
     """Display a single case with all its details."""
 
     # Case metadata header
@@ -221,15 +174,6 @@ def display_case(case, case_number=None, show_versions=False):
     # Narrative responses section
     st.subheader("📝 Narrative Responses")
 
-    # Get audio responses for this case (for version display)
-    audio_responses = {}
-    if show_versions:
-        all_audio = get_audio_responses_for_case(case.case_id)
-        for ar in all_audio:
-            if ar.question_id not in audio_responses:
-                audio_responses[ar.question_id] = []
-            audio_responses[ar.question_id].append(ar)
-
     # Parse answers JSON
     try:
         answers = json.loads(case.answers_json) if case.answers_json else {}
@@ -259,10 +203,6 @@ def display_case(case, case_number=None, show_versions=False):
                         # Display answer in a nice box
                         st.info(answers[qid])
 
-                        # Show transcript versions if available and requested
-                        if show_versions and qid in audio_responses:
-                            display_audio_versions(case.case_id, qid)
-
                 st.markdown("")
 
         # Check for any answers that don't fit in sections
@@ -278,9 +218,6 @@ def display_case(case, case_number=None, show_versions=False):
                 label = QUESTION_LABELS.get(qid, qid)
                 st.markdown(f"**{label}** *(ID: {qid})*")
                 st.info(answer)
-
-                if show_versions and qid in audio_responses:
-                    display_audio_versions(case.case_id, qid)
     else:
         st.info("No narrative responses recorded for this case.")
 
@@ -313,13 +250,6 @@ def display_case(case, case_number=None, show_versions=False):
 st.title("🔍 Case Viewer")
 st.markdown(f"Logged in as: **{get_current_username()}**")
 st.markdown("---")
-
-# Show transcript versions checkbox
-show_versions = st.checkbox(
-    "Show transcript version history",
-    value=False,
-    help="Display all versions of audio transcripts (original and edited)"
-)
 
 # Access mode selection
 access_mode = st.radio(
@@ -357,7 +287,7 @@ if access_mode == "View My Cases":
 
             if selected_case:
                 st.markdown("---")
-                display_case(selected_case, case_number=case_num, show_versions=show_versions)
+                display_case(selected_case, case_number=case_num)
     else:
         st.info("You haven't created any cases yet. Go to **Abbreviated Intake** or **Full Intake** to create your first case.")
 
@@ -426,7 +356,7 @@ else:
                             if selected_case:
                                 st.markdown("---")
                                 st.markdown(f"**Created by:** {selected_case.user_name}")
-                                display_case(selected_case, case_number=case_num, show_versions=show_versions)
+                                display_case(selected_case, case_number=case_num)
                     else:
                         st.info(f"No cases found for {selected_user}.")
             else:
@@ -440,22 +370,12 @@ with st.sidebar:
     **View My Cases:**
     - See all your cases
     - Cases numbered in order (Case 1, Case 2, etc.)
-    - View transcript version history
+    - Download cases as JSON
 
     **Admin Mode:**
     - Enter admin password
     - Select a person from dropdown
     - View all their cases
-    """)
-
-    st.markdown("---")
-    st.markdown("### Transcript Versions")
-    st.markdown("""
-    Enable **"Show transcript version history"** to see:
-    - Original auto-transcription
-    - Edited versions
-    - All changes over time
-    - Audio playback
     """)
 
     st.markdown("---")

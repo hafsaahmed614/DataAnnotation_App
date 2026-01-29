@@ -272,7 +272,7 @@ with side_col:
             st.markdown(f"**Discussed:** {case.services_discussed if case.services_discussed else 'N/A'}")
             st.markdown(f"**Accepted:** {case.services_accepted if case.services_accepted else 'N/A'}")
 
-        # Show narrative answers
+        # Show narrative answers - full text, not truncated
         with st.expander("Narrative Answers", expanded=False):
             if case.answers_json:
                 try:
@@ -284,10 +284,18 @@ with side_col:
                         labels = FULL_INTAKE_QUESTION_LABELS
 
                     for qid, answer in answers.items():
-                        if answer:  # Only show non-empty answers
+                        if answer and answer.strip():  # Only show non-empty answers
                             label = labels.get(qid, qid)
                             st.markdown(f"**{label}:**")
-                            st.markdown(f"_{answer[:200]}{'...' if len(answer) > 200 else ''}_")
+                            # Show full answer text, not truncated
+                            st.text_area(
+                                label,
+                                value=answer,
+                                height=150,
+                                disabled=True,
+                                label_visibility="collapsed",
+                                key=f"narrative_{qid}"
+                            )
                             st.markdown("---")
                 except:
                     st.markdown("_Unable to load answers_")
