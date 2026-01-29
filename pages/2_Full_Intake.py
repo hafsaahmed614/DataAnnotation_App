@@ -466,7 +466,8 @@ for qid, question in FULL_QUESTIONS.items():
         if audio_value is not None:
             audio_bytes = audio_value.read()
             st.session_state.full_audio[qid] = audio_bytes
-            st.audio(audio_bytes, format="audio/wav")
+            # Use the file's actual MIME type for playback (browsers record in WebM, not WAV)
+            st.audio(audio_bytes, format=audio_value.type if hasattr(audio_value, 'type') else "audio/webm")
             st.success("✅ Audio recorded!")
             # Mark that this question has audio
             if not st.session_state.full_answers[qid]:

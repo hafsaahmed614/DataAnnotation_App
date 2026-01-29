@@ -378,7 +378,8 @@ with main_col:
                 if audio_value is not None:
                     audio_bytes = audio_value.read()
                     st.session_state.followup_audio[selected_case_id][q_id] = audio_bytes
-                    st.audio(audio_bytes, format="audio/wav")
+                    # Use the file's actual MIME type for playback (browsers record in WebM, not WAV)
+                    st.audio(audio_bytes, format=audio_value.type if hasattr(audio_value, 'type') else "audio/webm")
                     st.success("✅ Audio recorded! Click Save to submit.")
                     # Mark that this question has audio (for save logic)
                     st.session_state.followup_answers[selected_case_id][q_id] = "[Audio response]"

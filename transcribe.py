@@ -180,7 +180,8 @@ def show_audio_input_with_transcription(
 
         if audio_value is not None:
             audio_bytes = audio_value.read()
-            st.audio(audio_bytes, format="audio/wav")
+            # Use the file's actual MIME type for playback (browsers record in WebM, not WAV)
+            st.audio(audio_bytes, format=audio_value.type if hasattr(audio_value, 'type') else "audio/webm")
 
             # Transcribe button
             if st.button(f"Transcribe Recording", key=f"transcribe_{question_id}"):
