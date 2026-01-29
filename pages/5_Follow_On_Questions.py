@@ -492,8 +492,7 @@ with st.sidebar:
     st.markdown(f"**Whisper Model:** {current_model}")
     st.markdown("""
     - Select **Record Audio** for any question
-    - Click **Transcribe** to convert to text
-    - Edit the transcript if needed
+    - Audio is automatically transcribed on save
     - Click **N/A** if question doesn't apply
     """)
 

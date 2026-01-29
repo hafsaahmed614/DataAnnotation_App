@@ -319,30 +319,14 @@ for qid, question in FULL_QUESTIONS.items():
             audio_bytes = audio_value.read()
             st.session_state.full_audio[qid] = audio_bytes
             st.audio(audio_bytes, format="audio/wav")
-
-            # Transcribe button
-            if st.button(f"Transcribe", key=f"transcribe_{qid}"):
-                transcript = transcribe_audio(audio_bytes)
-                if transcript:
-                    st.session_state.full_transcripts[qid] = transcript
-                    st.session_state.full_answers[qid] = transcript
-                    st.success("Transcription complete!")
-                    st.rerun()
-
-        # Show transcript if available
-        if st.session_state.full_transcripts[qid]:
-            st.markdown("**Auto-transcribed:**")
-            st.info(st.session_state.full_transcripts[qid])
-
-            # Editable transcript
-            edited = st.text_area(
-                "Edit transcript if needed:",
-                value=st.session_state.full_answers[qid],
-                height=120,
-                key=f"edit_{qid}",
-                help=question["help"]
-            )
-            st.session_state.full_answers[qid] = edited
+            st.success("✅ Audio recorded!")
+            # Mark that this question has audio
+            if not st.session_state.full_answers[qid]:
+                st.session_state.full_answers[qid] = "[Audio response]"
+        else:
+            # Check if audio was previously recorded
+            if st.session_state.full_audio.get(qid):
+                st.info("Audio previously recorded.")
     else:
         # Text input
         text_answer = st.text_area(
@@ -431,7 +415,15 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
             for qid in FULL_QUESTIONS:
                 audio_data = st.session_state.full_audio.get(qid)
                 auto_transcript = st.session_state.full_transcripts.get(qid)
-                edited_transcript = st.session_state.full_answers.get(qid)
+
+                # Auto-transcribe audio for admin review (user doesn't see this)
+                if audio_data and not auto_transcript:
+                    try:
+                        auto_transcript = transcribe_audio(audio_data)
+                        if auto_transcript:
+                            st.session_state.full_transcripts[qid] = auto_transcript
+                    except Exception:
+                        pass  # Continue saving even if transcription fails
 
                 if audio_data or auto_transcript:
                     save_audio_response(
@@ -439,7 +431,7 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
                         question_id=qid,
                         audio_data=audio_data,
                         auto_transcript=auto_transcript,
-                        edited_transcript=edited_transcript if edited_transcript != auto_transcript else None
+                        edited_transcript=None  # User doesn't edit transcript anymore
                     )
 
             st.success(f"✅ Case saved successfully!")
@@ -513,9 +505,8 @@ with st.sidebar:
     st.markdown(f"**Whisper Model:** {current_model}")
     st.markdown("""
     - Select **Record Audio** for any question
-    - Click **Transcribe** to convert to text
-    - Edit the transcript if needed
-    - All versions are saved
+    - Audio is automatically transcribed on save
+    - All recordings are saved
     """)
 
     st.markdown("---")
