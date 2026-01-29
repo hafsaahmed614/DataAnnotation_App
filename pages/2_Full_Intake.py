@@ -290,6 +290,16 @@ def load_draft_to_session(draft):
         'state': draft.state or ''
     }
 
+    # Also set the widget keys directly so Streamlit uses these values
+    if draft.age_at_snf_stay is not None:
+        st.session_state.full_age = draft.age_at_snf_stay
+    if draft.gender:
+        st.session_state.full_gender = draft.gender
+    if draft.race:
+        st.session_state.full_race = draft.race
+    if draft.state:
+        st.session_state.full_state = draft.state
+
     # Load services
     st.session_state.full_services = {
         'snf_days': draft.snf_days,
@@ -297,10 +307,21 @@ def load_draft_to_session(draft):
         'services_accepted': draft.services_accepted or ''
     }
 
-    # Load answers
+    # Also set service widget keys
+    if draft.snf_days is not None:
+        st.session_state.full_snf_days = draft.snf_days
+    if draft.services_discussed:
+        st.session_state.full_services_discussed = draft.services_discussed
+    if draft.services_accepted:
+        st.session_state.full_services_accepted = draft.services_accepted
+
+    # Load answers - set both the dict and the individual widget keys
     answers = json.loads(draft.answers_json) if draft.answers_json else {}
     for qid in FULL_QUESTIONS:
-        st.session_state.full_answers[qid] = answers.get(qid, "")
+        answer_text = answers.get(qid, "")
+        st.session_state.full_answers[qid] = answer_text
+        # Set the text area widget key directly
+        st.session_state[f"text_{qid}"] = answer_text
 
     st.session_state.full_draft_loaded = True
 
@@ -321,6 +342,16 @@ def clear_form_state():
         'services_accepted': ''
     }
     st.session_state.full_draft_loaded = False
+
+    # Clear widget keys to ensure fresh form
+    for key in ['full_age', 'full_gender', 'full_race', 'full_state',
+                'full_snf_days', 'full_services_discussed', 'full_services_accepted']:
+        if key in st.session_state:
+            del st.session_state[key]
+    # Clear text area widget keys
+    for qid in FULL_QUESTIONS:
+        if f"text_{qid}" in st.session_state:
+            del st.session_state[f"text_{qid}"]
 
 
 # Check for existing draft on first load

@@ -1,10 +1,20 @@
 """
 Authentication module for SNF Patient Navigator Case Collection App.
 Handles user login, session management, and access control in Streamlit.
+Includes login persistence across page refreshes using query params.
 """
 
 import streamlit as st
+import hashlib
+import secrets
 from db import authenticate_user, create_user, get_user_by_username
+
+
+def generate_session_token(username: str) -> str:
+    """Generate a session token for persistent login."""
+    # Create a token based on username and a random component
+    random_part = secrets.token_hex(16)
+    return hashlib.sha256(f"{username}:{random_part}".encode()).hexdigest()[:32]
 
 
 def init_session_state():
@@ -15,6 +25,31 @@ def init_session_state():
         st.session_state.current_user = None
     if 'username' not in st.session_state:
         st.session_state.username = None
+    if 'session_token' not in st.session_state:
+        st.session_state.session_token = None
+    if 'auth_checked' not in st.session_state:
+        st.session_state.auth_checked = False
+
+    # Check for persistent login via query params (only once per session)
+    if not st.session_state.auth_checked and not st.session_state.authenticated:
+        st.session_state.auth_checked = True
+        try:
+            params = st.query_params
+            stored_user = params.get("user")
+            stored_token = params.get("token")
+
+            if stored_user and stored_token:
+                # Validate the user exists
+                user = get_user_by_username(stored_user)
+                if user:
+                    # Auto-login the user
+                    st.session_state.authenticated = True
+                    st.session_state.current_user = user
+                    st.session_state.username = stored_user
+                    st.session_state.session_token = stored_token
+        except Exception:
+            # If anything fails, just continue without auto-login
+            pass
 
 
 def login(username: str, pin: str) -> bool:
@@ -33,6 +68,16 @@ def login(username: str, pin: str) -> bool:
         st.session_state.authenticated = True
         st.session_state.current_user = user
         st.session_state.username = username
+
+        # Generate session token and set query params for persistence
+        token = generate_session_token(username)
+        st.session_state.session_token = token
+        try:
+            st.query_params["user"] = username
+            st.query_params["token"] = token
+        except Exception:
+            pass  # Query params might not be available in some contexts
+
         return True
     return False
 
@@ -42,6 +87,14 @@ def logout():
     st.session_state.authenticated = False
     st.session_state.current_user = None
     st.session_state.username = None
+    st.session_state.session_token = None
+    st.session_state.auth_checked = False
+
+    # Clear query params
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
 
 
 def register(username: str, pin: str) -> tuple[bool, str]:
