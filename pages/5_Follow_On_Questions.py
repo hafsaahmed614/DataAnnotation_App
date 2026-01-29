@@ -5,6 +5,7 @@ This page allows users to answer AI-generated follow-up questions for their case
 Users can return to complete unanswered questions at any time.
 """
 
+import json
 import streamlit as st
 from db import (
     init_db,
@@ -14,7 +15,8 @@ from db import (
     update_follow_up_answer,
     save_follow_up_audio_response,
     get_latest_follow_up_audio,
-    get_case_by_id
+    get_case_by_id,
+    get_cases_by_user_name
 )
 from auth import require_auth, get_current_username, init_session_state
 from transcribe import transcribe_audio
@@ -54,6 +56,44 @@ SECTION_LABELS = {
     "C": "SNF Patient State Transitions, Incentives, and Navigator Time Allocation"
 }
 
+# Question labels for abbreviated intake
+ABBREVIATED_QUESTION_LABELS = {
+    "aq1": "Case Summary",
+    "aq2": "SNF Team Discharge Timing",
+    "aq3": "Requirements for Safe Discharge",
+    "aq4": "Estimated Discharge Date",
+    "aq5": "Alignment Across Stakeholders",
+    "aq6": "SNF Discharge Conditions",
+    "aq7": "HHA Involvement",
+    "aq8": "Information Shared with HHA"
+}
+
+# Question labels for full intake
+FULL_INTAKE_QUESTION_LABELS = {
+    "q6": "Case Summary",
+    "q7": "Referral Source and Expectation",
+    "q8": "Upstream Path to SNF",
+    "q9": "Expected Length of Stay at Admission",
+    "q10": "Initial Assessment",
+    "q11": "Early Home Feasibility Reasoning",
+    "q12": "Key SNF Roles and People",
+    "q13": "Patient Response to Discharge/Services",
+    "q14": "Patient/Family Goals for Home",
+    "q15": "SNF Discharge Timing Over Time",
+    "q16": "Requirements for Safe Discharge",
+    "q17": "Services Discussed and Agreed",
+    "q18": "HHA Involvement and Handoff",
+    "q19": "Information Shared with HHA",
+    "q20": "Estimated Discharge Date and Reasoning",
+    "q21": "Alignment Across Stakeholders",
+    "q22": "SNF Discharge Conditions",
+    "q23": "Plan for First 24-48 Hours",
+    "q25": "Transition SNF to Home Overall",
+    "q26": "Handoff Completion and Gaps",
+    "q27": "24-Hour Follow-up Contact",
+    "q28": "Initial At-Home Status and Next Steps"
+}
+
 # Initialize session state
 if 'selected_followup_case' not in st.session_state:
     st.session_state.selected_followup_case = None
@@ -63,6 +103,60 @@ if 'followup_audio' not in st.session_state:
     st.session_state.followup_audio = {}
 if 'followup_transcripts' not in st.session_state:
     st.session_state.followup_transcripts = {}
+if 'saved_questions' not in st.session_state:
+    st.session_state.saved_questions = set()  # Track which questions were just saved
+
+
+def get_case_numbers_by_type(username: str) -> dict:
+    """
+    Get case numbers for each case, separated by intake type.
+    Returns a dict mapping case_id to its number within its intake type.
+    """
+    all_cases = get_cases_by_user_name(username)
+
+    # Separate by intake type and number them
+    abbrev_count = 0
+    full_count = 0
+    case_numbers = {}
+
+    for case in all_cases:  # Already ordered by created_at ascending
+        if case.intake_version == "abbrev":
+            abbrev_count += 1
+            case_numbers[case.case_id] = ("Abbreviated Intake", abbrev_count)
+        else:
+            full_count += 1
+            case_numbers[case.case_id] = ("Full Intake", full_count)
+
+    return case_numbers
+
+
+def save_single_answer(case_id: str, q_id: str, answer_text: str, is_na: bool = False):
+    """Save a single answer and return success status."""
+    try:
+        # Save the answer
+        update_follow_up_answer(q_id, answer_text)
+
+        # Save audio if available and not N/A
+        if not is_na:
+            audio_data = st.session_state.followup_audio.get(case_id, {}).get(q_id)
+            auto_transcript = st.session_state.followup_transcripts.get(case_id, {}).get(q_id)
+
+            if audio_data or auto_transcript:
+                save_follow_up_audio_response(
+                    case_id=case_id,
+                    follow_up_question_id=q_id,
+                    audio_data=audio_data,
+                    auto_transcript=auto_transcript,
+                    edited_transcript=answer_text if answer_text != auto_transcript else None
+                )
+
+        # Mark as saved in session state
+        st.session_state.saved_questions.add(q_id)
+        return True
+    except Exception as e:
+        st.error(f"Error saving answer: {str(e)}")
+        return False
+
 
 # Title
 st.title("❓ Follow-On Questions")
@@ -91,34 +185,50 @@ if not cases_with_followups:
     """)
     st.stop()
 
+# Get case numbers for display
+case_numbers = get_case_numbers_by_type(username)
+
 # Check if we have a case from redirect (just saved)
 if 'last_saved_case_id' in st.session_state and st.session_state.last_saved_case_id:
-    # Auto-select the just-saved case
     st.session_state.selected_followup_case = st.session_state.last_saved_case_id
     st.session_state.last_saved_case_id = None
 
 # Case selection section
 st.header("1. Select a Case")
 
-# Create a formatted list of cases for selection
+# Create a formatted list of cases for selection with new naming format
 case_options = []
 case_id_map = {}
 for case_info in cases_with_followups:
     case_id = case_info["case_id"]
-    intake_type = "Abbreviated" if case_info["intake_version"] == "abbrev" else "Full"
-    created = case_info["created_at"].strftime("%Y-%m-%d %H:%M") if case_info["created_at"] else "Unknown"
     answered = case_info["answered_questions"]
     total = case_info["total_questions"]
     status = "✅ Complete" if case_info["is_complete"] else f"⏳ {answered}/{total} answered"
 
-    display_name = f"{intake_type} Intake ({created}) - {status}"
+    # Get the case number from our mapping
+    if case_id in case_numbers:
+        intake_type, case_num = case_numbers[case_id]
+        display_name = f"{intake_type} - Case {case_num} - {status}"
+    else:
+        # Fallback if not found
+        intake_type = "Abbreviated Intake" if case_info["intake_version"] == "abbrev" else "Full Intake"
+        display_name = f"{intake_type} - {status}"
+
     case_options.append(display_name)
     case_id_map[display_name] = case_id
 
-# Case selector
+# Case selector - find the index of the currently selected case
+default_index = 0  # "Select a case..." option
+if st.session_state.selected_followup_case:
+    for i, display_name in enumerate(case_options):
+        if case_id_map.get(display_name) == st.session_state.selected_followup_case:
+            default_index = i + 1  # +1 because of "Select a case..." option
+            break
+
 selected_display = st.selectbox(
     "Choose a case to answer follow-up questions:",
     options=["Select a case..."] + case_options,
+    index=default_index,
     key="case_selector"
 )
 
@@ -132,17 +242,6 @@ st.session_state.selected_followup_case = selected_case_id
 
 # Get case details for context
 case = get_case_by_id(selected_case_id)
-if case:
-    with st.expander("📋 Case Summary", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"**Intake Type:** {'Abbreviated' if case.intake_version == 'abbrev' else 'Full'}")
-            st.markdown(f"**Age:** {case.age_at_snf_stay}")
-            st.markdown(f"**Gender:** {case.gender}")
-        with col2:
-            st.markdown(f"**Race:** {case.race}")
-            st.markdown(f"**State:** {case.state}")
-            st.markdown(f"**SNF Days:** {case.snf_days if case.snf_days else 'Not provided'}")
 
 st.markdown("---")
 
@@ -158,182 +257,207 @@ total_questions = len(questions)
 answered_questions = sum(1 for q in questions if q.answer_text)
 progress = answered_questions / total_questions if total_questions > 0 else 0
 
-# Progress bar
-st.header("2. Answer Follow-Up Questions")
-st.progress(progress, text=f"Progress: {answered_questions}/{total_questions} questions answered ({int(progress*100)}%)")
+# Create two columns - main content and side panel
+main_col, side_col = st.columns([3, 1])
 
-# Initialize session state for this case's answers if needed
-if selected_case_id not in st.session_state.followup_answers:
-    st.session_state.followup_answers[selected_case_id] = {}
-    st.session_state.followup_audio[selected_case_id] = {}
-    st.session_state.followup_transcripts[selected_case_id] = {}
+with side_col:
+    # Collapsible case details panel
+    st.markdown("### 📋 Case Details")
 
-    # Pre-populate with existing answers
-    for q in questions:
-        st.session_state.followup_answers[selected_case_id][q.id] = q.answer_text or ""
-        # Load existing audio transcript if any
-        existing_audio = get_latest_follow_up_audio(selected_case_id, q.id)
-        if existing_audio:
-            st.session_state.followup_transcripts[selected_case_id][q.id] = existing_audio.auto_transcript
+    if case:
+        with st.expander("Demographics", expanded=True):
+            st.markdown(f"**Age:** {case.age_at_snf_stay}")
+            st.markdown(f"**Gender:** {case.gender}")
+            st.markdown(f"**Race:** {case.race}")
+            st.markdown(f"**State:** {case.state}")
+            st.markdown(f"**SNF Days:** {case.snf_days if case.snf_days else 'N/A'}")
 
-# Group questions by section
-current_section = None
-for question in questions:
-    section = question.section
+        with st.expander("Services", expanded=True):
+            st.markdown(f"**Discussed:** {case.services_discussed if case.services_discussed else 'N/A'}")
+            st.markdown(f"**Accepted:** {case.services_accepted if case.services_accepted else 'N/A'}")
 
-    # Add section header when section changes
-    if section != current_section:
-        current_section = section
-        st.markdown("---")
-        st.subheader(f"Section {section}: {SECTION_LABELS.get(section, section)}")
-
-    # Question display
-    q_id = question.id
-    is_answered = question.answer_text is not None
-    status_icon = "✅" if is_answered else "⏳"
-
-    st.markdown(f"**{status_icon} Question {section}{question.question_number}:**")
-    st.markdown(f"*{question.question_text}*")
-
-    # Input method selector
-    input_method = st.radio(
-        f"Answer method:",
-        ["Type", "Record Audio"],
-        key=f"method_fu_{q_id}",
-        horizontal=True,
-        label_visibility="collapsed"
-    )
-
-    if input_method == "Record Audio":
-        # Audio recording
-        audio_value = st.audio_input(
-            f"Record your answer",
-            key=f"audio_fu_{q_id}"
-        )
-
-        if audio_value is not None:
-            audio_bytes = audio_value.read()
-            st.session_state.followup_audio[selected_case_id][q_id] = audio_bytes
-            st.audio(audio_bytes, format="audio/wav")
-
-            # Transcribe button
-            if st.button(f"Transcribe", key=f"transcribe_fu_{q_id}"):
-                with st.spinner("Transcribing..."):
-                    transcript = transcribe_audio(audio_bytes)
-                    if transcript:
-                        st.session_state.followup_transcripts[selected_case_id][q_id] = transcript
-                        st.session_state.followup_answers[selected_case_id][q_id] = transcript
-                        st.success("Transcription complete!")
-                        st.rerun()
+        # Show narrative answers
+        with st.expander("Narrative Answers", expanded=False):
+            if case.answers_json:
+                try:
+                    answers = json.loads(case.answers_json)
+                    # Get the right labels based on intake type
+                    if case.intake_version == "abbrev":
+                        labels = ABBREVIATED_QUESTION_LABELS
                     else:
-                        st.error("Transcription failed. Please try again or type your answer.")
+                        labels = FULL_INTAKE_QUESTION_LABELS
 
-        # Show transcript if available
-        transcript = st.session_state.followup_transcripts[selected_case_id].get(q_id)
-        if transcript:
-            st.markdown("**Auto-transcribed:**")
-            st.info(transcript)
+                    for qid, answer in answers.items():
+                        if answer:  # Only show non-empty answers
+                            label = labels.get(qid, qid)
+                            st.markdown(f"**{label}:**")
+                            st.markdown(f"_{answer[:200]}{'...' if len(answer) > 200 else ''}_")
+                            st.markdown("---")
+                except:
+                    st.markdown("_Unable to load answers_")
 
-            # Editable transcript
-            edited = st.text_area(
-                "Edit transcript if needed:",
-                value=st.session_state.followup_answers[selected_case_id].get(q_id, ""),
-                height=120,
-                key=f"edit_fu_{q_id}",
-                help="Edit the transcription if needed before saving."
+with main_col:
+    # Progress bar
+    st.header("2. Answer Follow-Up Questions")
+    st.progress(progress, text=f"Progress: {answered_questions}/{total_questions} questions answered ({int(progress*100)}%)")
+
+    # Initialize session state for this case's answers if needed
+    if selected_case_id not in st.session_state.followup_answers:
+        st.session_state.followup_answers[selected_case_id] = {}
+        st.session_state.followup_audio[selected_case_id] = {}
+        st.session_state.followup_transcripts[selected_case_id] = {}
+
+        # Pre-populate with existing answers
+        for q in questions:
+            st.session_state.followup_answers[selected_case_id][q.id] = q.answer_text or ""
+            # Load existing audio transcript if any
+            existing_audio = get_latest_follow_up_audio(selected_case_id, q.id)
+            if existing_audio:
+                st.session_state.followup_transcripts[selected_case_id][q.id] = existing_audio.auto_transcript
+
+    # Group questions by section
+    current_section = None
+    for question in questions:
+        section = question.section
+
+        # Add section header when section changes
+        if section != current_section:
+            current_section = section
+            st.markdown("---")
+            st.subheader(f"Section {section}: {SECTION_LABELS.get(section, section)}")
+
+        # Question display
+        q_id = question.id
+        is_answered = question.answer_text is not None
+        is_na = question.answer_text == "N/A"
+        was_just_saved = q_id in st.session_state.saved_questions
+
+        # Status icon
+        if is_na:
+            status_icon = "⊘"
+            status_text = "N/A"
+        elif is_answered:
+            status_icon = "✅"
+            status_text = "Answered"
+        else:
+            status_icon = "⏳"
+            status_text = "Pending"
+
+        st.markdown(f"**{status_icon} Question {section}{question.question_number}:** _{status_text}_")
+        st.markdown(f"*{question.question_text}*")
+
+        # Show "Saved" indicator if just saved
+        if was_just_saved:
+            st.success("✅ Saved!")
+
+        # Skip input if already answered as N/A
+        if is_na:
+            st.info("This question was marked as N/A")
+        else:
+            # Input method selector
+            input_method = st.radio(
+                f"Answer method:",
+                ["Type", "Record Audio"],
+                key=f"method_fu_{q_id}",
+                horizontal=True,
+                label_visibility="collapsed"
             )
-            st.session_state.followup_answers[selected_case_id][q_id] = edited
-    else:
-        # Text input
-        current_value = st.session_state.followup_answers[selected_case_id].get(q_id, "")
-        text_answer = st.text_area(
-            "Type your answer:",
-            value=current_value,
-            height=120,
-            key=f"text_fu_{q_id}",
-            label_visibility="collapsed",
-            help="Provide a detailed answer to this follow-up question."
-        )
-        st.session_state.followup_answers[selected_case_id][q_id] = text_answer
 
-    # Individual save button for this question
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if st.button("💾 Save", key=f"save_fu_{q_id}", type="secondary"):
-            answer_text = st.session_state.followup_answers[selected_case_id].get(q_id, "").strip()
+            if input_method == "Record Audio":
+                # Audio recording
+                audio_value = st.audio_input(
+                    f"Record your answer",
+                    key=f"audio_fu_{q_id}"
+                )
 
-            if answer_text:
-                try:
-                    # Save the answer
-                    update_follow_up_answer(q_id, answer_text)
+                if audio_value is not None:
+                    audio_bytes = audio_value.read()
+                    st.session_state.followup_audio[selected_case_id][q_id] = audio_bytes
+                    st.audio(audio_bytes, format="audio/wav")
 
-                    # Save audio if available
-                    audio_data = st.session_state.followup_audio[selected_case_id].get(q_id)
-                    auto_transcript = st.session_state.followup_transcripts[selected_case_id].get(q_id)
+                    # Transcribe button
+                    if st.button(f"Transcribe", key=f"transcribe_fu_{q_id}"):
+                        with st.spinner("Transcribing..."):
+                            transcript = transcribe_audio(audio_bytes)
+                            if transcript:
+                                st.session_state.followup_transcripts[selected_case_id][q_id] = transcript
+                                st.session_state.followup_answers[selected_case_id][q_id] = transcript
+                                st.success("Transcription complete!")
+                                st.rerun()
+                            else:
+                                st.error("Transcription failed. Please try again or type your answer.")
 
-                    if audio_data or auto_transcript:
-                        save_follow_up_audio_response(
-                            case_id=selected_case_id,
-                            follow_up_question_id=q_id,
-                            audio_data=audio_data,
-                            auto_transcript=auto_transcript,
-                            edited_transcript=answer_text if answer_text != auto_transcript else None
-                        )
+                # Show transcript if available
+                transcript = st.session_state.followup_transcripts[selected_case_id].get(q_id)
+                if transcript:
+                    st.markdown("**Auto-transcribed:**")
+                    st.info(transcript)
 
-                    st.success("✅ Answer saved!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error saving answer: {str(e)}")
+                    # Editable transcript
+                    edited = st.text_area(
+                        "Edit transcript if needed:",
+                        value=st.session_state.followup_answers[selected_case_id].get(q_id, ""),
+                        height=120,
+                        key=f"edit_fu_{q_id}",
+                        help="Edit the transcription if needed before saving."
+                    )
+                    st.session_state.followup_answers[selected_case_id][q_id] = edited
             else:
-                st.warning("Please provide an answer before saving.")
+                # Text input
+                current_value = st.session_state.followup_answers[selected_case_id].get(q_id, "")
+                text_answer = st.text_area(
+                    "Type your answer:",
+                    value=current_value,
+                    height=120,
+                    key=f"text_fu_{q_id}",
+                    label_visibility="collapsed",
+                    help="Provide a detailed answer to this follow-up question."
+                )
+                st.session_state.followup_answers[selected_case_id][q_id] = text_answer
 
-    with col2:
-        if is_answered:
-            st.caption("✅ This question has been answered")
+            # Save and N/A buttons
+            col1, col2, col3 = st.columns([1, 1, 3])
+            with col1:
+                if st.button("💾 Save", key=f"save_fu_{q_id}", type="secondary"):
+                    answer_text = st.session_state.followup_answers[selected_case_id].get(q_id, "").strip()
 
-st.markdown("---")
+                    if answer_text:
+                        if save_single_answer(selected_case_id, q_id, answer_text):
+                            st.rerun()
+                    else:
+                        st.warning("Please provide an answer before saving.")
 
-# Save All button
-st.header("3. Save All Answers")
+            with col2:
+                if st.button("⊘ N/A", key=f"na_fu_{q_id}", type="secondary"):
+                    if save_single_answer(selected_case_id, q_id, "N/A", is_na=True):
+                        st.rerun()
 
-if st.button("💾 Save All Answers", use_container_width=True, type="primary"):
-    saved_count = 0
-    error_count = 0
+    st.markdown("---")
 
-    with st.spinner("Saving all answers..."):
-        for question in questions:
-            q_id = question.id
-            answer_text = st.session_state.followup_answers[selected_case_id].get(q_id, "").strip()
+    # Save All button
+    st.header("3. Save All Answers")
 
-            if answer_text:
-                try:
-                    # Save the answer
-                    update_follow_up_answer(q_id, answer_text)
+    if st.button("💾 Save All Answers", use_container_width=True, type="primary"):
+        saved_count = 0
+        error_count = 0
 
-                    # Save audio if available
-                    audio_data = st.session_state.followup_audio[selected_case_id].get(q_id)
-                    auto_transcript = st.session_state.followup_transcripts[selected_case_id].get(q_id)
+        with st.spinner("Saving all answers..."):
+            for question in questions:
+                q_id = question.id
+                answer_text = st.session_state.followup_answers[selected_case_id].get(q_id, "").strip()
 
-                    if audio_data or auto_transcript:
-                        save_follow_up_audio_response(
-                            case_id=selected_case_id,
-                            follow_up_question_id=q_id,
-                            audio_data=audio_data,
-                            auto_transcript=auto_transcript,
-                            edited_transcript=answer_text if answer_text != auto_transcript else None
-                        )
+                if answer_text and question.answer_text != answer_text:  # Only save if changed
+                    if save_single_answer(selected_case_id, q_id, answer_text):
+                        saved_count += 1
+                    else:
+                        error_count += 1
 
-                    saved_count += 1
-                except Exception as e:
-                    error_count += 1
-                    st.error(f"Error saving question {question.section}{question.question_number}: {str(e)}")
-
-    if saved_count > 0:
-        st.success(f"✅ Successfully saved {saved_count} answer(s)!")
-    if error_count > 0:
-        st.warning(f"⚠️ {error_count} answer(s) could not be saved.")
-
-    st.rerun()
+        if saved_count > 0:
+            st.success(f"✅ Successfully saved {saved_count} answer(s)!")
+        elif error_count == 0:
+            st.info("No new answers to save.")
+        if error_count > 0:
+            st.warning(f"⚠️ {error_count} answer(s) could not be saved.")
 
 # Sidebar info
 with st.sidebar:
@@ -343,9 +467,15 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Your Cases")
     for case_info in cases_with_followups:
-        intake_type = "Abbrev" if case_info["intake_version"] == "abbrev" else "Full"
+        case_id = case_info["case_id"]
+        if case_id in case_numbers:
+            intake_type, case_num = case_numbers[case_id]
+            short_type = "Abbrev" if "Abbreviated" in intake_type else "Full"
+        else:
+            short_type = "Abbrev" if case_info["intake_version"] == "abbrev" else "Full"
+            case_num = "?"
         status = "✅" if case_info["is_complete"] else f"⏳ {case_info['answered_questions']}/{case_info['total_questions']}"
-        st.markdown(f"- {intake_type}: {status}")
+        st.markdown(f"- {short_type} #{case_num}: {status}")
 
     st.markdown("---")
     st.markdown("### Question Sections")
@@ -360,7 +490,7 @@ with st.sidebar:
     - Select **Record Audio** for any question
     - Click **Transcribe** to convert to text
     - Edit the transcript if needed
-    - Save individual answers or all at once
+    - Click **N/A** if question doesn't apply
     """)
 
     st.markdown("---")
@@ -368,6 +498,6 @@ with st.sidebar:
     st.markdown("""
     - Answer in **past tense**
     - Be as detailed as possible
-    - You can save answers individually or all at once
+    - Use **N/A** for non-applicable questions
     - Return anytime to complete remaining questions
     """)
