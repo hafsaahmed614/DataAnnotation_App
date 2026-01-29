@@ -184,17 +184,10 @@ if not cases_with_followups:
 # Get case numbers for display
 case_numbers = get_case_numbers_by_type(username)
 
-# Check if we have a case from redirect (just saved)
-if 'last_saved_case_id' in st.session_state and st.session_state.last_saved_case_id:
-    st.session_state.selected_followup_case = st.session_state.last_saved_case_id
-    st.session_state.last_saved_case_id = None
-
-# Case selection section
-st.header("1. Select a Case")
-
 # Create a formatted list of cases for selection with new naming format
 case_options = []
 case_id_map = {}
+reverse_case_id_map = {}  # Map case_id back to display name
 for case_info in cases_with_followups:
     case_id = case_info["case_id"]
     answered = case_info["answered_questions"]
@@ -212,19 +205,32 @@ for case_info in cases_with_followups:
 
     case_options.append(display_name)
     case_id_map[display_name] = case_id
+    reverse_case_id_map[case_id] = display_name
 
-# Case selector - find the index of the currently selected case
-default_index = 0  # "Select a case..." option
-if st.session_state.selected_followup_case:
-    for i, display_name in enumerate(case_options):
-        if case_id_map.get(display_name) == st.session_state.selected_followup_case:
-            default_index = i + 1  # +1 because of "Select a case..." option
-            break
+# Check if we have a case from redirect (just saved)
+# Set the widget's session state key directly to avoid the warning
+if 'last_saved_case_id' in st.session_state and st.session_state.last_saved_case_id:
+    redirect_case_id = st.session_state.last_saved_case_id
+    st.session_state.last_saved_case_id = None
+    # Set the widget key directly if the case exists in our options
+    if redirect_case_id in reverse_case_id_map:
+        st.session_state.case_selector = reverse_case_id_map[redirect_case_id]
+        st.session_state.selected_followup_case = redirect_case_id
+
+# Case selection section
+st.header("1. Select a Case")
+
+# Determine if we need to set a default (only on first load when key doesn't exist)
+if "case_selector" not in st.session_state:
+    # First load - use the selected_followup_case if set, otherwise default to placeholder
+    if st.session_state.selected_followup_case and st.session_state.selected_followup_case in reverse_case_id_map:
+        st.session_state.case_selector = reverse_case_id_map[st.session_state.selected_followup_case]
+    else:
+        st.session_state.case_selector = "Select a case..."
 
 selected_display = st.selectbox(
     "Choose a case to answer follow-up questions:",
     options=["Select a case..."] + case_options,
-    index=default_index,
     key="case_selector"
 )
 
