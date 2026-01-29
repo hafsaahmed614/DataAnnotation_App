@@ -197,6 +197,59 @@ class AppSettings(Base):
         }
 
 
+class DraftCase(Base):
+    """
+    SQLAlchemy model for draft/incomplete cases.
+    Stores work-in-progress cases that haven't been finalized yet.
+    One draft per user per intake type (abbrev or full).
+    """
+    __tablename__ = "draft_cases"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_name = Column(String(200), nullable=False)
+    intake_version = Column(String(10), nullable=False)  # "abbrev" or "full"
+
+    # Demographics (nullable for drafts - may not be filled yet)
+    age_at_snf_stay = Column(Integer, nullable=True)
+    gender = Column(Text, nullable=True)
+    race = Column(Text, nullable=True)
+    state = Column(Text, nullable=True)
+
+    # Additional fields
+    snf_days = Column(Integer, nullable=True)
+    services_discussed = Column(Text, nullable=True)
+    services_accepted = Column(Text, nullable=True)
+
+    # JSON string storing all narrative answers keyed by stable IDs
+    answers_json = Column(Text, nullable=False, default="{}")
+
+    # JSON string storing audio data references (question_id -> has_audio boolean)
+    audio_json = Column(Text, nullable=False, default="{}")
+
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.utcnow(), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow(), nullable=False)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert draft case to dictionary."""
+        return {
+            "id": self.id,
+            "user_name": self.user_name,
+            "intake_version": self.intake_version,
+            "age_at_snf_stay": self.age_at_snf_stay,
+            "gender": self.gender,
+            "race": self.race,
+            "state": self.state,
+            "snf_days": self.snf_days,
+            "services_discussed": self.services_discussed,
+            "services_accepted": self.services_accepted,
+            "answers": json.loads(self.answers_json) if self.answers_json else {},
+            "audio": json.loads(self.audio_json) if self.audio_json else {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
 # ============== Authentication Functions ==============
 
 def hash_pin(pin: str) -> str:
@@ -1027,6 +1080,190 @@ def get_latest_follow_up_audio(case_id: str, follow_up_question_id: str) -> Opti
         if response:
             session.expunge(response)
         return response
+    finally:
+        session.close()
+
+
+# ============== Draft Case Functions ==============
+
+def save_draft_case(
+    user_name: str,
+    intake_version: str,
+    age_at_snf_stay: Optional[int] = None,
+    gender: Optional[str] = None,
+    race: Optional[str] = None,
+    state: Optional[str] = None,
+    snf_days: Optional[int] = None,
+    services_discussed: Optional[str] = None,
+    services_accepted: Optional[str] = None,
+    answers: Optional[Dict[str, str]] = None,
+    audio_flags: Optional[Dict[str, bool]] = None
+) -> str:
+    """
+    Save or update a draft case. Only one draft per user per intake type.
+
+    Args:
+        user_name: The user's name
+        intake_version: "abbrev" or "full"
+        age_at_snf_stay: Patient's age (nullable)
+        gender: Patient's gender (nullable)
+        race: Patient's race (nullable)
+        state: SNF state (nullable)
+        snf_days: Number of days in SNF (nullable)
+        services_discussed: Services discussed text (nullable)
+        services_accepted: Services accepted text (nullable)
+        answers: Dictionary of narrative answers
+        audio_flags: Dictionary of question_id -> bool indicating if audio exists
+
+    Returns:
+        The draft case ID
+    """
+    session = get_session()
+    try:
+        from sqlalchemy import func
+
+        # Check if draft already exists for this user and intake type
+        existing = session.query(DraftCase).filter(
+            func.lower(DraftCase.user_name) == user_name.lower(),
+            DraftCase.intake_version == intake_version
+        ).first()
+
+        if existing:
+            # Update existing draft
+            existing.age_at_snf_stay = age_at_snf_stay
+            existing.gender = gender
+            existing.race = race
+            existing.state = state
+            existing.snf_days = snf_days
+            existing.services_discussed = services_discussed
+            existing.services_accepted = services_accepted
+            existing.answers_json = json.dumps(answers or {})
+            existing.audio_json = json.dumps(audio_flags or {})
+            existing.updated_at = datetime.utcnow()
+            session.commit()
+            return existing.id
+        else:
+            # Create new draft
+            draft = DraftCase(
+                user_name=user_name,
+                intake_version=intake_version,
+                age_at_snf_stay=age_at_snf_stay,
+                gender=gender,
+                race=race,
+                state=state,
+                snf_days=snf_days,
+                services_discussed=services_discussed,
+                services_accepted=services_accepted,
+                answers_json=json.dumps(answers or {}),
+                audio_json=json.dumps(audio_flags or {})
+            )
+            session.add(draft)
+            session.commit()
+            return draft.id
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def get_draft_case(user_name: str, intake_version: str) -> Optional[DraftCase]:
+    """
+    Get a user's draft case for a specific intake type.
+
+    Args:
+        user_name: The user's name (case insensitive)
+        intake_version: "abbrev" or "full"
+
+    Returns:
+        DraftCase object if found, None otherwise
+    """
+    session = get_session()
+    try:
+        from sqlalchemy import func
+        draft = session.query(DraftCase).filter(
+            func.lower(DraftCase.user_name) == user_name.lower(),
+            DraftCase.intake_version == intake_version
+        ).first()
+        if draft:
+            session.expunge(draft)
+        return draft
+    finally:
+        session.close()
+
+
+def has_draft_case(user_name: str, intake_version: str) -> bool:
+    """
+    Check if a user has a draft case for a specific intake type.
+
+    Args:
+        user_name: The user's name (case insensitive)
+        intake_version: "abbrev" or "full"
+
+    Returns:
+        True if draft exists, False otherwise
+    """
+    session = get_session()
+    try:
+        from sqlalchemy import func
+        count = session.query(DraftCase).filter(
+            func.lower(DraftCase.user_name) == user_name.lower(),
+            DraftCase.intake_version == intake_version
+        ).count()
+        return count > 0
+    finally:
+        session.close()
+
+
+def delete_draft_case(user_name: str, intake_version: str) -> bool:
+    """
+    Delete a user's draft case for a specific intake type.
+
+    Args:
+        user_name: The user's name (case insensitive)
+        intake_version: "abbrev" or "full"
+
+    Returns:
+        True if deleted, False if not found
+    """
+    session = get_session()
+    try:
+        from sqlalchemy import func
+        draft = session.query(DraftCase).filter(
+            func.lower(DraftCase.user_name) == user_name.lower(),
+            DraftCase.intake_version == intake_version
+        ).first()
+        if draft:
+            session.delete(draft)
+            session.commit()
+            return True
+        return False
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+
+def get_all_user_drafts(user_name: str) -> List[DraftCase]:
+    """
+    Get all draft cases for a user.
+
+    Args:
+        user_name: The user's name (case insensitive)
+
+    Returns:
+        List of DraftCase objects
+    """
+    session = get_session()
+    try:
+        from sqlalchemy import func
+        drafts = session.query(DraftCase).filter(
+            func.lower(DraftCase.user_name) == user_name.lower()
+        ).order_by(DraftCase.updated_at.desc()).all()
+        for draft in drafts:
+            session.expunge(draft)
+        return drafts
     finally:
         session.close()
 

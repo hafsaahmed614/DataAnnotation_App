@@ -3,12 +3,21 @@ SNF Patient Navigator Case Collection - Abbreviated Intake Page
 
 Shorter intake form capturing essential case information with conversational
 narrative prompts. Supports both typed and audio-recorded answers.
+Includes auto-save and session timeout handling.
 """
 
 import streamlit as st
-from db import create_case, save_audio_response, init_db, get_setting, create_follow_up_questions
+import json
+from db import (
+    create_case, save_audio_response, init_db, get_setting, create_follow_up_questions,
+    save_draft_case, get_draft_case, delete_draft_case, has_draft_case
+)
 from auth import require_auth, get_current_username, init_session_state
 from openai_integration import generate_follow_up_questions
+from session_timer import (
+    init_session_timer, update_activity_time, should_auto_save, mark_auto_saved,
+    render_session_timer_warning, render_auto_save_status, render_resume_draft_banner
+)
 
 # Page configuration
 st.set_page_config(
@@ -37,6 +46,12 @@ init_session_state()
 # Check authentication
 if not require_auth():
     st.stop()
+
+# Initialize session timer
+init_session_timer()
+
+# Get current username for draft operations
+current_user = get_current_username()
 
 # Constants
 US_STATES = [
@@ -116,8 +131,124 @@ if 'abbrev_answers' not in st.session_state:
 if 'abbrev_audio' not in st.session_state:
     st.session_state.abbrev_audio = {qid: None for qid in ABBREV_QUESTIONS}
 
+# Initialize draft-related session state
+if 'abbrev_draft_checked' not in st.session_state:
+    st.session_state.abbrev_draft_checked = False
+if 'abbrev_draft_loaded' not in st.session_state:
+    st.session_state.abbrev_draft_loaded = False
+if 'abbrev_demographics' not in st.session_state:
+    st.session_state.abbrev_demographics = {
+        'age': None,
+        'gender': '',
+        'race': '',
+        'state': ''
+    }
+if 'abbrev_services' not in st.session_state:
+    st.session_state.abbrev_services = {
+        'snf_days': None,
+        'services_discussed': '',
+        'services_accepted': ''
+    }
+
+
+def save_current_draft():
+    """Save current form state as draft."""
+    try:
+        # Get audio flags (which questions have audio)
+        audio_flags = {qid: bool(st.session_state.abbrev_audio.get(qid))
+                       for qid in ABBREV_QUESTIONS}
+
+        save_draft_case(
+            user_name=current_user,
+            intake_version="abbrev",
+            age_at_snf_stay=st.session_state.abbrev_demographics.get('age'),
+            gender=st.session_state.abbrev_demographics.get('gender') or None,
+            race=st.session_state.abbrev_demographics.get('race') or None,
+            state=st.session_state.abbrev_demographics.get('state') or None,
+            snf_days=st.session_state.abbrev_services.get('snf_days'),
+            services_discussed=st.session_state.abbrev_services.get('services_discussed') or None,
+            services_accepted=st.session_state.abbrev_services.get('services_accepted') or None,
+            answers=st.session_state.abbrev_answers,
+            audio_flags=audio_flags
+        )
+        return True
+    except Exception as e:
+        st.error(f"Failed to save draft: {str(e)}")
+        return False
+
+
+def load_draft_to_session(draft):
+    """Load draft data into session state."""
+    # Load demographics
+    st.session_state.abbrev_demographics = {
+        'age': draft.age_at_snf_stay,
+        'gender': draft.gender or '',
+        'race': draft.race or '',
+        'state': draft.state or ''
+    }
+
+    # Load services
+    st.session_state.abbrev_services = {
+        'snf_days': draft.snf_days,
+        'services_discussed': draft.services_discussed or '',
+        'services_accepted': draft.services_accepted or ''
+    }
+
+    # Load answers
+    answers = json.loads(draft.answers_json) if draft.answers_json else {}
+    for qid in ABBREV_QUESTIONS:
+        st.session_state.abbrev_answers[qid] = answers.get(qid, "")
+
+    st.session_state.abbrev_draft_loaded = True
+
+
+def clear_form_state():
+    """Clear all form state for fresh start."""
+    st.session_state.abbrev_answers = {qid: "" for qid in ABBREV_QUESTIONS}
+    st.session_state.abbrev_audio = {qid: None for qid in ABBREV_QUESTIONS}
+    st.session_state.abbrev_demographics = {
+        'age': None,
+        'gender': '',
+        'race': '',
+        'state': ''
+    }
+    st.session_state.abbrev_services = {
+        'snf_days': None,
+        'services_discussed': '',
+        'services_accepted': ''
+    }
+    st.session_state.abbrev_draft_loaded = False
+
+
+# Check for existing draft on first load
+if not st.session_state.abbrev_draft_checked:
+    existing_draft = get_draft_case(current_user, "abbrev")
+    if existing_draft:
+        st.session_state.abbrev_pending_draft = existing_draft
+    st.session_state.abbrev_draft_checked = True
+
 # Title
 st.title("📝 Abbreviated Intake")
+
+# Session timeout warning (if applicable)
+render_session_timer_warning()
+
+# Handle pending draft - show resume/discard banner
+if hasattr(st.session_state, 'abbrev_pending_draft') and st.session_state.abbrev_pending_draft and not st.session_state.abbrev_draft_loaded:
+    draft = st.session_state.abbrev_pending_draft
+
+    resume_clicked, discard_clicked = render_resume_draft_banner(draft, "Abbreviated")
+
+    if resume_clicked:
+        load_draft_to_session(draft)
+        st.session_state.abbrev_pending_draft = None
+        st.rerun()
+    elif discard_clicked:
+        delete_draft_case(current_user, "abbrev")
+        clear_form_state()
+        st.session_state.abbrev_pending_draft = None
+        st.rerun()
+
 st.markdown(f"""
 Logged in as: **{get_current_username()}**
 
@@ -130,18 +261,32 @@ You can **type** your answers or **record audio**.
 """)
 st.markdown("---")
 
+# Auto-save status indicator
+render_auto_save_status()
+
 # Section 1: Demographics
 st.header("1. Patient Demographics")
 st.markdown("*All demographic fields are required.*")
 
 col1, col2 = st.columns(2)
 
+# Determine default values from session state (draft or fresh)
+default_age = st.session_state.abbrev_demographics.get('age')
+default_gender = st.session_state.abbrev_demographics.get('gender', '')
+default_race = st.session_state.abbrev_demographics.get('race', '')
+default_state = st.session_state.abbrev_demographics.get('state', '')
+
+# Calculate selectbox indices
+gender_index = GENDER_OPTIONS.index(default_gender) + 1 if default_gender in GENDER_OPTIONS else 0
+race_index = RACE_OPTIONS.index(default_race) + 1 if default_race in RACE_OPTIONS else 0
+state_index = US_STATES.index(default_state) + 1 if default_state in US_STATES else 0
+
 with col1:
     age = st.number_input(
         "Age at SNF Stay",
         min_value=0,
         max_value=120,
-        value=None,
+        value=default_age,
         help="Patient's age in years during the SNF stay",
         placeholder="Enter age...",
         key="abbrev_age"
@@ -150,7 +295,7 @@ with col1:
     gender = st.selectbox(
         "Gender",
         options=[""] + GENDER_OPTIONS,
-        index=0,
+        index=gender_index,
         help="Patient's gender",
         key="abbrev_gender"
     )
@@ -159,7 +304,7 @@ with col2:
     race = st.selectbox(
         "Race",
         options=[""] + RACE_OPTIONS,
-        index=0,
+        index=race_index,
         help="Patient's race/ethnicity",
         key="abbrev_race"
     )
@@ -167,10 +312,16 @@ with col2:
     state = st.selectbox(
         "SNF State",
         options=[""] + US_STATES,
-        index=0,
+        index=state_index,
         help="State where the SNF is located",
         key="abbrev_state"
     )
+
+# Update session state demographics for draft saving
+st.session_state.abbrev_demographics['age'] = age
+st.session_state.abbrev_demographics['gender'] = gender
+st.session_state.abbrev_demographics['race'] = race
+st.session_state.abbrev_demographics['state'] = state
 
 st.markdown("---")
 
@@ -227,11 +378,17 @@ for qid, question in ABBREV_QUESTIONS.items():
 # Section 3: Services and SNF Days
 st.header("3. Services & Duration")
 
+# Get default values from session state (for draft loading)
+default_snf_days = st.session_state.abbrev_services.get('snf_days')
+default_services_discussed = st.session_state.abbrev_services.get('services_discussed', '')
+default_services_accepted = st.session_state.abbrev_services.get('services_accepted', '')
+
 col1, col2 = st.columns(2)
 
 with col1:
     services_discussed = st.text_area(
         "Services Discussed",
+        value=default_services_discussed,
         height=100,
         help="List all services that were discussed with the patient/family",
         placeholder="e.g., Physical therapy, occupational therapy, home health aide, meal delivery...",
@@ -241,6 +398,7 @@ with col1:
 with col2:
     services_accepted = st.text_area(
         "Services Accepted",
+        value=default_services_accepted,
         height=100,
         help="List which services the patient/family agreed to accept",
         placeholder="e.g., Physical therapy 3x/week, home health aide...",
@@ -251,15 +409,36 @@ snf_days = st.number_input(
     "How many days was the patient in the SNF?",
     min_value=0,
     max_value=365,
-    value=None,
+    value=default_snf_days,
     help="Total number of days from admission to discharge",
     key="abbrev_snf_days"
 )
 
+# Update session state services for draft saving
+st.session_state.abbrev_services['snf_days'] = snf_days
+st.session_state.abbrev_services['services_discussed'] = services_discussed
+st.session_state.abbrev_services['services_accepted'] = services_accepted
+
 st.markdown("---")
 
-# Submit button
-if st.button("💾 Save Case", use_container_width=True, type="primary"):
+# Auto-save check (trigger every 2 minutes)
+if should_auto_save():
+    if save_current_draft():
+        mark_auto_saved()
+
+# Buttons row: Save Draft and Save Case
+col_draft, col_save = st.columns(2)
+
+with col_draft:
+    if st.button("📄 Save Draft", use_container_width=True):
+        if save_current_draft():
+            st.success("Draft saved successfully!")
+            mark_auto_saved()
+
+with col_save:
+    save_case_clicked = st.button("💾 Save Case", use_container_width=True, type="primary")
+
+if save_case_clicked:
     # Validation
     errors = []
 
@@ -277,13 +456,10 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
             st.error(f"❌ {error}")
     else:
         try:
-            # Get current username
-            user_name = get_current_username()
-
             # Create case
             case_id = create_case(
                 intake_version="abbrev",
-                user_name=user_name,
+                user_name=current_user,
                 age_at_snf_stay=int(age),
                 gender=gender,
                 race=race,
@@ -306,6 +482,9 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
                         auto_transcript=None,  # Transcription is admin-only
                         edited_transcript=None
                     )
+
+            # Delete draft after successful case save
+            delete_draft_case(current_user, "abbrev")
 
             st.success(f"✅ Case saved successfully!")
 
@@ -333,7 +512,7 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
 
                 if success and questions:
                     # Store questions in database with user_name
-                    create_follow_up_questions(case_id, questions, user_name)
+                    create_follow_up_questions(case_id, questions, current_user)
                     st.success(f"✅ Generated {len(questions)} follow-up questions!")
                     st.info("📋 Go to **Follow-On Questions** page to answer them.")
                     # Store case_id for redirect
@@ -342,9 +521,9 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
                     st.warning(f"⚠️ Could not generate follow-up questions: {error_msg}")
                     st.info("You can still view your case in the **Case Viewer**.")
 
-            # Clear form data
-            st.session_state.abbrev_answers = {qid: "" for qid in ABBREV_QUESTIONS}
-            st.session_state.abbrev_audio = {qid: None for qid in ABBREV_QUESTIONS}
+            # Clear form data and draft state
+            clear_form_state()
+            st.session_state.abbrev_draft_checked = False
 
         except Exception as e:
             st.error(f"❌ Error saving case: {str(e)}")

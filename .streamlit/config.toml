@@ -1,0 +1,16 @@
+[server]
+# Extended session timeout for Streamlit Cloud (max ~30 minutes)
+# This helps prevent users from losing work due to session expiration
+maxMessageSize = 200
+enableStaticServing = true
+
+[browser]
+# Gather usage stats - set to false for privacy
+gatherUsageStats = false
+
+[theme]
+# Optional: You can customize the theme here
+# primaryColor = "#1f77b4"
+# backgroundColor = "#ffffff"
+# secondaryBackgroundColor = "#f0f2f6"
+# textColor = "#262730"
