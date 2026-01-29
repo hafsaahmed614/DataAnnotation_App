@@ -8,7 +8,8 @@ Whisper transcription model selection.
 import streamlit as st
 from db import (
     init_db, get_setting, set_setting, get_whisper_settings,
-    get_all_users, get_all_user_names
+    get_all_users, get_all_user_names, get_audio_responses_for_case,
+    get_all_case_ids, get_case_by_id, get_follow_up_question_by_id
 )
 from auth import require_auth, get_current_username, init_session_state
 
@@ -203,6 +204,166 @@ try:
 except Exception as e:
     st.warning(f"Could not load user statistics: {e}")
 
+st.markdown("---")
+
+# Audio Transcription Manager
+st.header("🎧 Audio Transcription Manager")
+st.markdown("""
+Review and transcribe audio recordings from cases. Select a case to view its audio responses,
+play them back, and generate transcripts using Whisper.
+""")
+
+# Get all cases with audio
+all_case_ids = get_all_case_ids()
+
+if not all_case_ids:
+    st.info("No cases found in the database.")
+else:
+    # Case selector
+    selected_case_id = st.selectbox(
+        "Select a case to view audio recordings:",
+        options=["Select a case..."] + all_case_ids,
+        key="admin_audio_case_selector"
+    )
+
+    if selected_case_id != "Select a case...":
+        # Get case details
+        case = get_case_by_id(selected_case_id)
+        if case:
+            st.markdown(f"**Case:** {selected_case_id} | **User:** {case.user_name} | **Type:** {case.intake_version}")
+
+        # Get audio responses for this case
+        audio_responses = get_audio_responses_for_case(selected_case_id)
+
+        if not audio_responses:
+            st.info("No audio recordings found for this case.")
+        else:
+            st.success(f"Found {len(audio_responses)} audio recording(s)")
+
+            # Question labels for display
+            QUESTION_LABELS = {
+                "aq1": "Case Summary", "aq2": "SNF Team Discharge Timing",
+                "aq3": "Requirements for Safe Discharge", "aq4": "Estimated Discharge Date",
+                "aq5": "Alignment Across Stakeholders", "aq6": "SNF Discharge Conditions",
+                "aq7": "HHA Involvement", "aq8": "Information Shared with HHA",
+                "q6": "Case Summary", "q7": "Referral Source", "q8": "Upstream Path to SNF",
+                "q9": "Expected Length of Stay", "q10": "Initial Assessment",
+                "q11": "Early Home Feasibility", "q12": "Key SNF Roles",
+                "q13": "Patient Response", "q14": "Patient/Family Goals",
+                "q15": "SNF Discharge Timing", "q16": "Requirements for Discharge",
+                "q17": "Services Discussed", "q18": "HHA Involvement",
+                "q19": "Information Shared with HHA", "q20": "Estimated Discharge Date",
+                "q21": "Alignment Across Stakeholders", "q22": "SNF Discharge Conditions",
+                "q23": "Plan for First 24-48 Hours", "q25": "Transition Overall",
+                "q26": "Handoff Completion", "q27": "24-Hour Follow-up",
+                "q28": "Initial At-Home Status"
+            }
+
+            for audio_resp in audio_responses:
+                # Determine question label
+                q_id = audio_resp.question_id
+                if q_id and q_id.startswith("fu_"):
+                    # Follow-up question audio
+                    fu_id = audio_resp.follow_up_question_id
+                    if fu_id:
+                        fu_question = get_follow_up_question_by_id(fu_id)
+                        if fu_question:
+                            label = f"Follow-up {fu_question.section}{fu_question.question_number}"
+                        else:
+                            label = f"Follow-up Question"
+                    else:
+                        label = f"Follow-up Question"
+                else:
+                    label = QUESTION_LABELS.get(q_id, q_id or "Unknown")
+
+                with st.expander(f"🎤 {label} (v{audio_resp.version_number})", expanded=False):
+                    col1, col2 = st.columns([2, 1])
+
+                    with col1:
+                        # Audio playback
+                        if audio_resp.audio_data:
+                            st.markdown("**Audio Recording:**")
+                            st.audio(audio_resp.audio_data, format="audio/webm")
+                        else:
+                            st.warning("No audio data available")
+
+                    with col2:
+                        st.markdown(f"**Question ID:** `{q_id}`")
+                        st.markdown(f"**Version:** {audio_resp.version_number}")
+                        st.markdown(f"**Created:** {audio_resp.created_at.strftime('%Y-%m-%d %H:%M') if audio_resp.created_at else 'N/A'}")
+
+                    # Transcription section
+                    st.markdown("---")
+
+                    # Show existing transcript if available
+                    if audio_resp.auto_transcript:
+                        st.markdown("**Auto Transcript:**")
+                        st.info(audio_resp.auto_transcript)
+
+                    if audio_resp.edited_transcript:
+                        st.markdown("**Edited Transcript:**")
+                        st.success(audio_resp.edited_transcript)
+
+                    # Transcribe button
+                    if audio_resp.audio_data and not audio_resp.auto_transcript:
+                        if st.button(f"🔄 Transcribe", key=f"transcribe_{audio_resp.id}"):
+                            try:
+                                from transcribe import transcribe_audio
+                                from db import SessionLocal, AudioResponse
+
+                                transcript = transcribe_audio(audio_resp.audio_data)
+                                if transcript:
+                                    # Update the database directly
+                                    session = SessionLocal()
+                                    try:
+                                        db_audio = session.query(AudioResponse).filter(
+                                            AudioResponse.id == audio_resp.id
+                                        ).first()
+                                        if db_audio:
+                                            db_audio.auto_transcript = transcript
+                                            session.commit()
+                                            st.success("Transcription complete!")
+                                            st.info(transcript)
+                                            st.rerun()
+                                    finally:
+                                        session.close()
+                                else:
+                                    st.error("Transcription failed. Check if Whisper is installed.")
+                            except Exception as e:
+                                st.error(f"Error during transcription: {e}")
+                    elif audio_resp.auto_transcript:
+                        st.success("✅ Already transcribed")
+
+                    # Edit transcript
+                    if audio_resp.auto_transcript:
+                        edited = st.text_area(
+                            "Edit transcript:",
+                            value=audio_resp.edited_transcript or audio_resp.auto_transcript,
+                            height=100,
+                            key=f"edit_{audio_resp.id}"
+                        )
+
+                        if st.button(f"💾 Save Edit", key=f"save_edit_{audio_resp.id}"):
+                            try:
+                                from db import SessionLocal, AudioResponse
+
+                                session = SessionLocal()
+                                try:
+                                    db_audio = session.query(AudioResponse).filter(
+                                        AudioResponse.id == audio_resp.id
+                                    ).first()
+                                    if db_audio:
+                                        db_audio.edited_transcript = edited
+                                        session.commit()
+                                        st.success("Transcript saved!")
+                                        st.rerun()
+                                finally:
+                                    session.close()
+                            except Exception as e:
+                                st.error(f"Error saving transcript: {e}")
+
+st.markdown("---")
+
 # Sidebar
 with st.sidebar:
     st.markdown("### Admin Settings")
@@ -211,14 +372,25 @@ with st.sidebar:
 
     - **Transcription Model**: Choose Whisper model size
     - **Model Provider**: OpenAI Whisper (local)
+    - **Audio Manager**: Review and transcribe recordings
 
     **Note**: Larger models provide better accuracy but require more memory and processing time.
     """)
 
     st.markdown("---")
-    st.markdown("### Tips")
+    st.markdown("### Audio Transcription")
     st.markdown("""
-    - **tiny/base**: Good for quick transcriptions
+    The Audio Manager lets you:
+    - Select a case to view recordings
+    - Play back audio responses
+    - Generate transcripts with Whisper
+    - Edit and save transcripts
+    """)
+
+    st.markdown("---")
+    st.markdown("### Model Tips")
+    st.markdown("""
+    - **tiny/base**: Quick transcriptions
     - **small**: Balanced accuracy/speed
     - **medium/large**: Best for complex audio
     """)
