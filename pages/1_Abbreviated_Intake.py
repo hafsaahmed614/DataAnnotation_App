@@ -8,7 +8,6 @@ narrative prompts. Supports both typed and audio-recorded answers.
 import streamlit as st
 from db import create_case, save_audio_response, init_db, get_setting, create_follow_up_questions
 from auth import require_auth, get_current_username, init_session_state
-from transcribe import transcribe_audio
 from openai_integration import generate_follow_up_questions
 
 # Page configuration
@@ -116,8 +115,6 @@ if 'abbrev_answers' not in st.session_state:
     st.session_state.abbrev_answers = {qid: "" for qid in ABBREV_QUESTIONS}
 if 'abbrev_audio' not in st.session_state:
     st.session_state.abbrev_audio = {qid: None for qid in ABBREV_QUESTIONS}
-if 'abbrev_transcripts' not in st.session_state:
-    st.session_state.abbrev_transcripts = {qid: None for qid in ABBREV_QUESTIONS}
 
 # Title
 st.title("📝 Abbreviated Intake")
@@ -127,7 +124,7 @@ Logged in as: **{get_current_username()}**
 This form captures essential case information through a brief set of questions.
 All questions are in **past tense** — please describe what happened in completed cases.
 
-You can **type** your answers or **record audio** which will be automatically transcribed.
+You can **type** your answers or **record audio**.
 
 *Case start date is automatically set to January 1, 2025.*
 """)
@@ -179,7 +176,7 @@ st.markdown("---")
 
 # Section 2: Narrative Questions with Audio Support
 st.header("2. Case Narrative")
-st.markdown("*Answer by typing or recording audio. Audio will be transcribed automatically.*")
+st.markdown("*Answer by typing or recording audio.*")
 
 for qid, question in ABBREV_QUESTIONS.items():
     st.subheader(question["label"])
@@ -297,27 +294,17 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
                 answers=st.session_state.abbrev_answers
             )
 
-            # Save audio responses for questions that have audio
+            # Save audio responses for questions that have audio (no transcription - admin only)
             for qid in ABBREV_QUESTIONS:
                 audio_data = st.session_state.abbrev_audio.get(qid)
-                auto_transcript = st.session_state.abbrev_transcripts.get(qid)
 
-                # Auto-transcribe audio for admin review (user doesn't see this)
-                if audio_data and not auto_transcript:
-                    try:
-                        auto_transcript = transcribe_audio(audio_data)
-                        if auto_transcript:
-                            st.session_state.abbrev_transcripts[qid] = auto_transcript
-                    except Exception:
-                        pass  # Continue saving even if transcription fails
-
-                if audio_data or auto_transcript:
+                if audio_data:
                     save_audio_response(
                         case_id=case_id,
                         question_id=qid,
                         audio_data=audio_data,
-                        auto_transcript=auto_transcript,
-                        edited_transcript=None  # User doesn't edit transcript anymore
+                        auto_transcript=None,  # Transcription is admin-only
+                        edited_transcript=None
                     )
 
             st.success(f"✅ Case saved successfully!")
@@ -345,8 +332,8 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
                 )
 
                 if success and questions:
-                    # Store questions in database
-                    create_follow_up_questions(case_id, questions)
+                    # Store questions in database with user_name
+                    create_follow_up_questions(case_id, questions, user_name)
                     st.success(f"✅ Generated {len(questions)} follow-up questions!")
                     st.info("📋 Go to **Follow-On Questions** page to answer them.")
                     # Store case_id for redirect
@@ -358,7 +345,6 @@ if st.button("💾 Save Case", use_container_width=True, type="primary"):
             # Clear form data
             st.session_state.abbrev_answers = {qid: "" for qid in ABBREV_QUESTIONS}
             st.session_state.abbrev_audio = {qid: None for qid in ABBREV_QUESTIONS}
-            st.session_state.abbrev_transcripts = {qid: None for qid in ABBREV_QUESTIONS}
 
         except Exception as e:
             st.error(f"❌ Error saving case: {str(e)}")
@@ -378,11 +364,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### Audio Recording")
-    current_model = get_setting("whisper_model_size", "base")
-    st.markdown(f"**Whisper Model:** {current_model}")
     st.markdown("""
     - Click **Record Audio** to speak your answer
-    - Audio is automatically transcribed on save
     - All recordings are saved
     """)
 

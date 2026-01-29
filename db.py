@@ -43,10 +43,11 @@ class Case(Base):
     """
     SQLAlchemy model for SNF patient navigator cases.
     Stores one row per case with demographics and narrative answers as JSON.
+    case_id format: {username}_{number} where number is sequential per user (1, 2, 3...)
     """
     __tablename__ = "cases"
 
-    case_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    case_id = Column(String(250), primary_key=True)  # Format: username_number (e.g., "john_1")
     created_at = Column(DateTime, default=lambda: datetime.utcnow(), nullable=False)
     case_start_date = Column(Date, default=FIXED_CASE_START_DATE, nullable=False)
     intake_version = Column(String(10), nullable=False)  # "abbrev" or "full"
@@ -116,7 +117,8 @@ class FollowUpQuestion(Base):
     __tablename__ = "follow_up_questions"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    case_id = Column(String(36), ForeignKey("cases.case_id"), nullable=False)
+    case_id = Column(String(250), ForeignKey("cases.case_id"), nullable=False)
+    user_name = Column(String(200), nullable=False)  # User who owns this question
     section = Column(String(1), nullable=False)  # "A", "B", or "C"
     question_number = Column(Integer, nullable=False)  # 1, 2, 3, etc. within section
     question_text = Column(Text, nullable=False)  # The AI-generated question
@@ -129,6 +131,7 @@ class FollowUpQuestion(Base):
         return {
             "id": self.id,
             "case_id": self.case_id,
+            "user_name": self.user_name,
             "section": self.section,
             "question_number": self.question_number,
             "question_text": self.question_text,
@@ -148,7 +151,7 @@ class AudioResponse(Base):
     __tablename__ = "audio_responses"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    case_id = Column(String(36), ForeignKey("cases.case_id"), nullable=False)
+    case_id = Column(String(250), ForeignKey("cases.case_id"), nullable=False)
     question_id = Column(String(20), nullable=True)  # e.g., "aq1", "q6" - for case questions
     follow_up_question_id = Column(String(36), ForeignKey("follow_up_questions.id"), nullable=True)  # For follow-up questions
     audio_path = Column(Text, nullable=True)  # Path in Supabase Storage
@@ -557,6 +560,44 @@ def get_session():
     return SessionLocal()
 
 
+def get_next_case_number(user_name: str) -> int:
+    """
+    Get the next case number for a user.
+
+    Args:
+        user_name: The user's name (case insensitive)
+
+    Returns:
+        The next case number (1 if first case, otherwise max + 1)
+    """
+    session = get_session()
+    try:
+        from sqlalchemy import func
+        # Get all cases for this user and count them
+        count = session.query(Case).filter(
+            func.lower(Case.user_name) == user_name.lower()
+        ).count()
+        return count + 1
+    finally:
+        session.close()
+
+
+def generate_case_id(user_name: str, case_number: int) -> str:
+    """
+    Generate a case ID in the format: username_number
+
+    Args:
+        user_name: The user's name
+        case_number: The sequential case number for this user
+
+    Returns:
+        Case ID string (e.g., "john_doe_1")
+    """
+    # Normalize username: lowercase, replace spaces with underscores
+    normalized_name = user_name.lower().replace(" ", "_")
+    return f"{normalized_name}_{case_number}"
+
+
 def create_case(
     intake_version: str,
     user_name: str,
@@ -585,11 +626,16 @@ def create_case(
         answers: Dictionary of narrative answers keyed by question ID
 
     Returns:
-        The generated case_id (UUID string)
+        The generated case_id (format: username_number, e.g., "john_doe_1")
     """
     session = get_session()
     try:
+        # Generate sequential case_id for this user
+        case_number = get_next_case_number(user_name)
+        case_id = generate_case_id(user_name, case_number)
+
         case = Case(
+            case_id=case_id,
             intake_version=intake_version,
             user_name=user_name,
             age_at_snf_stay=age_at_snf_stay,
@@ -707,13 +753,14 @@ def get_all_user_names() -> List[str]:
 
 # ============== Follow-Up Question Functions ==============
 
-def create_follow_up_questions(case_id: str, questions: List[Dict[str, Any]]) -> List[str]:
+def create_follow_up_questions(case_id: str, questions: List[Dict[str, Any]], user_name: str) -> List[str]:
     """
     Create multiple follow-up questions for a case.
 
     Args:
         case_id: The case ID these questions belong to
         questions: List of dicts with keys: section, question_number, question_text
+        user_name: The user who owns these questions
 
     Returns:
         List of created question IDs
@@ -724,6 +771,7 @@ def create_follow_up_questions(case_id: str, questions: List[Dict[str, Any]]) ->
         for q in questions:
             follow_up = FollowUpQuestion(
                 case_id=case_id,
+                user_name=user_name,
                 section=q["section"],
                 question_number=q["question_number"],
                 question_text=q["question_text"]
