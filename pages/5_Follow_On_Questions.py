@@ -141,13 +141,22 @@ def save_single_answer(case_id: str, q_id: str, answer_text: str, is_na: bool = 
             audio_data = st.session_state.followup_audio.get(case_id, {}).get(q_id)
             auto_transcript = st.session_state.followup_transcripts.get(case_id, {}).get(q_id)
 
+            # Auto-transcribe audio for admin review (user doesn't see this)
+            if audio_data and not auto_transcript:
+                try:
+                    auto_transcript = transcribe_audio(audio_data)
+                    if auto_transcript:
+                        st.session_state.followup_transcripts[case_id][q_id] = auto_transcript
+                except Exception:
+                    pass  # Continue saving even if transcription fails
+
             if audio_data or auto_transcript:
                 save_follow_up_audio_response(
                     case_id=case_id,
                     follow_up_question_id=q_id,
                     audio_data=audio_data,
                     auto_transcript=auto_transcript,
-                    edited_transcript=answer_text if answer_text != auto_transcript else None
+                    edited_transcript=None  # User doesn't edit transcript anymore
                 )
 
         # Mark as saved in session state
@@ -374,34 +383,13 @@ with main_col:
                     audio_bytes = audio_value.read()
                     st.session_state.followup_audio[selected_case_id][q_id] = audio_bytes
                     st.audio(audio_bytes, format="audio/wav")
-
-                    # Transcribe button
-                    if st.button(f"Transcribe", key=f"transcribe_fu_{q_id}"):
-                        with st.spinner("Transcribing..."):
-                            transcript = transcribe_audio(audio_bytes)
-                            if transcript:
-                                st.session_state.followup_transcripts[selected_case_id][q_id] = transcript
-                                st.session_state.followup_answers[selected_case_id][q_id] = transcript
-                                st.success("Transcription complete!")
-                                st.rerun()
-                            else:
-                                st.error("Transcription failed. Please try again or type your answer.")
-
-                # Show transcript if available
-                transcript = st.session_state.followup_transcripts[selected_case_id].get(q_id)
-                if transcript:
-                    st.markdown("**Auto-transcribed:**")
-                    st.info(transcript)
-
-                    # Editable transcript
-                    edited = st.text_area(
-                        "Edit transcript if needed:",
-                        value=st.session_state.followup_answers[selected_case_id].get(q_id, ""),
-                        height=120,
-                        key=f"edit_fu_{q_id}",
-                        help="Edit the transcription if needed before saving."
-                    )
-                    st.session_state.followup_answers[selected_case_id][q_id] = edited
+                    st.success("✅ Audio recorded! Click Save to submit.")
+                    # Mark that this question has audio (for save logic)
+                    st.session_state.followup_answers[selected_case_id][q_id] = "[Audio response]"
+                else:
+                    # Check if audio was previously recorded
+                    if st.session_state.followup_audio.get(selected_case_id, {}).get(q_id):
+                        st.info("Audio previously recorded.")
             else:
                 # Text input
                 current_value = st.session_state.followup_answers[selected_case_id].get(q_id, "")
