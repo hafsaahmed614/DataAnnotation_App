@@ -440,21 +440,37 @@ with main_col:
     if st.button("💾 Save All Answers", use_container_width=True, type="primary"):
         saved_count = 0
         error_count = 0
+        already_saved_count = 0
+        empty_count = 0
 
         with st.spinner("Saving all answers..."):
             for question in questions:
                 q_id = question.id
                 answer_text = st.session_state.followup_answers[selected_case_id].get(q_id, "").strip()
 
-                if answer_text and question.answer_text != answer_text:  # Only save if changed
+                if not answer_text:
+                    # Empty answer, skip
+                    empty_count += 1
+                elif question.answer_text == answer_text:
+                    # Already saved with same value
+                    already_saved_count += 1
+                else:
+                    # New or changed answer, save it
                     if save_single_answer(selected_case_id, q_id, answer_text):
                         saved_count += 1
                     else:
                         error_count += 1
 
+        # Calculate total answered
+        total_answered = saved_count + already_saved_count
+
         if saved_count > 0:
-            st.success(f"✅ Successfully saved {saved_count} answer(s)!")
-        elif error_count == 0:
+            st.success(f"✅ Saved {saved_count} new answer(s)! Total answered: {total_answered}/{total_questions}")
+        elif already_saved_count > 0:
+            st.info(f"All {already_saved_count} answer(s) were already saved. No changes needed.")
+        elif empty_count == total_questions:
+            st.warning("No answers to save. Please answer some questions first.")
+        else:
             st.info("No new answers to save.")
         if error_count > 0:
             st.warning(f"⚠️ {error_count} answer(s) could not be saved.")
