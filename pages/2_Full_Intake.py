@@ -404,23 +404,24 @@ st.markdown("*All demographic fields are required.*")
 
 col1, col2 = st.columns(2)
 
-# Determine default values from session state (draft or fresh)
-default_age = st.session_state.full_demographics.get('age')
-default_gender = st.session_state.full_demographics.get('gender', '')
-default_race = st.session_state.full_demographics.get('race', '')
-default_state = st.session_state.full_demographics.get('state', '')
-
-# Calculate selectbox indices
-gender_index = GENDER_OPTIONS.index(default_gender) + 1 if default_gender in GENDER_OPTIONS else 0
-race_index = RACE_OPTIONS.index(default_race) + 1 if default_race in RACE_OPTIONS else 0
-state_index = US_STATES.index(default_state) + 1 if default_state in US_STATES else 0
+# Initialize widget keys if not already set (fresh form)
+if 'full_age' not in st.session_state:
+    st.session_state.full_age = st.session_state.full_demographics.get('age') or 0
+if 'full_gender' not in st.session_state:
+    default_gender = st.session_state.full_demographics.get('gender', '')
+    st.session_state.full_gender = default_gender if default_gender in GENDER_OPTIONS else ""
+if 'full_race' not in st.session_state:
+    default_race = st.session_state.full_demographics.get('race', '')
+    st.session_state.full_race = default_race if default_race in RACE_OPTIONS else ""
+if 'full_state' not in st.session_state:
+    default_state = st.session_state.full_demographics.get('state', '')
+    st.session_state.full_state = default_state if default_state in US_STATES else ""
 
 with col1:
     age = st.number_input(
         "Age at SNF Stay",
         min_value=0,
         max_value=120,
-        value=default_age,
         help="Patient's age in years during the SNF stay",
         placeholder="Enter age...",
         key="full_age"
@@ -429,7 +430,6 @@ with col1:
     gender = st.selectbox(
         "Gender",
         options=[""] + GENDER_OPTIONS,
-        index=gender_index,
         help="Patient's gender",
         key="full_gender"
     )
@@ -438,7 +438,6 @@ with col2:
     race = st.selectbox(
         "Race",
         options=[""] + RACE_OPTIONS,
-        index=race_index,
         help="Patient's race/ethnicity",
         key="full_race"
     )
@@ -446,7 +445,6 @@ with col2:
     state = st.selectbox(
         "SNF State",
         options=[""] + US_STATES,
-        index=state_index,
         help="State where the SNF is located",
         key="full_state"
     )
@@ -524,17 +522,19 @@ st.markdown("---")
 # Section 3: Services and SNF Days
 st.header("3. Services & Duration")
 
-# Get default values from session state (for draft loading)
-default_snf_days = st.session_state.full_services.get('snf_days')
-default_services_discussed = st.session_state.full_services.get('services_discussed', '')
-default_services_accepted = st.session_state.full_services.get('services_accepted', '')
+# Initialize widget keys if not already set (fresh form)
+if 'full_services_discussed' not in st.session_state:
+    st.session_state.full_services_discussed = st.session_state.full_services.get('services_discussed', '')
+if 'full_services_accepted' not in st.session_state:
+    st.session_state.full_services_accepted = st.session_state.full_services.get('services_accepted', '')
+if 'full_snf_days' not in st.session_state:
+    st.session_state.full_snf_days = st.session_state.full_services.get('snf_days') or 0
 
 col1, col2 = st.columns(2)
 
 with col1:
     services_discussed = st.text_area(
         "Services Discussed",
-        value=default_services_discussed,
         height=100,
         help="List all services that were discussed with the patient/family",
         placeholder="e.g., Physical therapy, occupational therapy, home health aide, meal delivery, medication management...",
@@ -544,7 +544,6 @@ with col1:
 with col2:
     services_accepted = st.text_area(
         "Services Accepted",
-        value=default_services_accepted,
         height=100,
         help="List which services the patient/family agreed to accept",
         placeholder="e.g., Physical therapy 3x/week, home health aide daily, medication delivery...",
@@ -555,7 +554,6 @@ snf_days = st.number_input(
     "How many days was the patient in the SNF?",
     min_value=0,
     max_value=365,
-    value=default_snf_days,
     help="Total number of days from admission to discharge",
     key="full_snf_days"
 )
