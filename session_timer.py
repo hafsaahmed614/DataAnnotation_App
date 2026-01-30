@@ -46,9 +46,28 @@ def get_time_remaining() -> int:
 
 
 def should_show_warning() -> bool:
-    """Check if session timeout warning should be displayed."""
+    """
+    Check if session timeout warning should be displayed.
+
+    Warning is suppressed if user has been active recently (within last 60 seconds),
+    allowing the warning to auto-dismiss when user continues working.
+    """
     remaining = get_time_remaining()
-    return remaining <= (SESSION_TIMEOUT_SECONDS - WARNING_THRESHOLD_SECONDS)
+
+    # Check if we're in the warning zone (less than 5 minutes remaining)
+    in_warning_zone = remaining <= (SESSION_TIMEOUT_SECONDS - WARNING_THRESHOLD_SECONDS)
+
+    if not in_warning_zone:
+        return False
+
+    # Check for recent activity - if user has been active in last 60 seconds,
+    # suppress the warning (it will reappear if they stop working)
+    if 'last_activity_time' in st.session_state:
+        seconds_since_activity = (datetime.utcnow() - st.session_state.last_activity_time).total_seconds()
+        if seconds_since_activity < 60:
+            return False
+
+    return True
 
 
 def should_auto_save() -> bool:
@@ -87,21 +106,21 @@ def render_session_timer_warning():
             st.error(f"""
                 **Session expiring in {time_str}!**
 
-                Your session will timeout soon. Click **Save Draft** now to avoid losing your work!
+                Your session will timeout soon. Click the **Save Draft** button at the bottom of the page to avoid losing your work!
             """)
         elif remaining <= 180:
             # Urgent warning - less than 3 minutes
             st.warning(f"""
                 **Session expiring in {time_str}**
 
-                Please save your draft or submit your case soon to avoid losing work.
+                Please use the **Save Draft** button at the bottom of the page or submit your case soon to avoid losing work.
             """)
         else:
             # Standard warning - 5 minutes or less
             st.warning(f"""
                 **Session expires in {time_str}**
 
-                Your work is being auto-saved, but please complete or save your case soon.
+                Your work is being auto-saved, but please complete your case or use the **Save Draft** button at the bottom soon.
             """)
         return True
     return False

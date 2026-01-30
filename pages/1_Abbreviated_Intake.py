@@ -47,8 +47,9 @@ init_session_state()
 if not require_auth():
     st.stop()
 
-# Initialize session timer
+# Initialize session timer and update activity (page reruns on user interaction)
 init_session_timer()
+update_activity_time()
 
 # Get current username for draft operations
 current_user = get_current_username()
