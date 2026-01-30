@@ -406,7 +406,7 @@ col1, col2 = st.columns(2)
 
 # Initialize widget keys if not already set (fresh form)
 if 'full_age' not in st.session_state:
-    st.session_state.full_age = st.session_state.full_demographics.get('age') or 0
+    st.session_state.full_age = st.session_state.full_demographics.get('age')
 if 'full_gender' not in st.session_state:
     default_gender = st.session_state.full_demographics.get('gender', '')
     st.session_state.full_gender = default_gender if default_gender in GENDER_OPTIONS else ""
@@ -528,7 +528,7 @@ if 'full_services_discussed' not in st.session_state:
 if 'full_services_accepted' not in st.session_state:
     st.session_state.full_services_accepted = st.session_state.full_services.get('services_accepted', '')
 if 'full_snf_days' not in st.session_state:
-    st.session_state.full_snf_days = st.session_state.full_services.get('snf_days') or 0
+    st.session_state.full_snf_days = st.session_state.full_services.get('snf_days')
 
 col1, col2 = st.columns(2)
 

@@ -303,7 +303,7 @@ col1, col2 = st.columns(2)
 
 # Initialize widget keys if not already set (fresh form)
 if 'abbrev_age' not in st.session_state:
-    st.session_state.abbrev_age = st.session_state.abbrev_demographics.get('age') or 0
+    st.session_state.abbrev_age = st.session_state.abbrev_demographics.get('age')
 if 'abbrev_gender' not in st.session_state:
     default_gender = st.session_state.abbrev_demographics.get('gender', '')
     st.session_state.abbrev_gender = default_gender if default_gender in GENDER_OPTIONS else ""
@@ -414,7 +414,7 @@ if 'abbrev_services_discussed' not in st.session_state:
 if 'abbrev_services_accepted' not in st.session_state:
     st.session_state.abbrev_services_accepted = st.session_state.abbrev_services.get('services_accepted', '')
 if 'abbrev_snf_days' not in st.session_state:
-    st.session_state.abbrev_snf_days = st.session_state.abbrev_services.get('snf_days') or 0
+    st.session_state.abbrev_snf_days = st.session_state.abbrev_services.get('snf_days')
 
 col1, col2 = st.columns(2)
 
