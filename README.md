@@ -8,39 +8,58 @@ A Streamlit web application for collecting historical SNF (Skilled Nursing Facil
 - **Two Intake Forms**:
   - **Abbreviated Intake**: Quick 8-question form for essential case information
   - **Full Intake**: Comprehensive 20+ question form for detailed patient journeys
-- **Audio Recording**: Record narrative answers via browser microphone
-- **AI Transcription**: OpenAI Whisper for automatic audio-to-text transcription (admin configurable)
+- **Audio Recording**: Record narrative answers via browser microphone (WebM format)
+- **AI Transcription**: OpenAI Whisper for automatic audio-to-text transcription (admin-only feature)
 - **AI Follow-up Questions**: Automatically generated follow-up questions using OpenAI GPT for deeper case insights
-- **Draft Auto-Save**: Automatic draft saving with session timeout handling (30-minute session limit)
+- **Draft Auto-Save**: Automatic draft saving every 2 minutes with session timeout handling (30-minute session limit)
 
 ### User Features
 - **Secure Authentication**: Username + 4-digit PIN login system
-- **Personal Case Numbering**: Cases numbered sequentially per user (Case 1, Case 2, etc.)
+- **Login Persistence**: Stay logged in across page refreshes (session token via URL)
+- **Personal Case Numbering**: Cases numbered sequentially per user (e.g., john_doe_1, john_doe_2)
 - **Case Viewer**: View and export your saved cases as JSON
-- **Resume Drafts**: Resume incomplete forms where you left off
+- **Resume Drafts**: Resume incomplete forms where you left off with full state restoration
+- **Session Timeout Warnings**: Smart warnings that auto-dismiss when you continue working
 
 ### Admin Features
 - **View All Cases**: Admin password access to view all user cases
-- **Transcription Settings**: Configure Whisper model size (tiny/base/small/medium/large)
+- **Transcription Settings**: Configure Whisper model provider and size (tiny/base/small/medium/large)
+- **Audio Transcription Manager**:
+  - Review audio recordings from any case
+  - Play back audio responses
+  - Generate transcripts with Whisper
+  - Edit and save transcripts
 - **User Statistics**: View registered users and case counts
+
+### Follow-On Questions
+- **AI-Generated Questions**: GPT generates contextual follow-up questions based on case answers
+- **Three Sections**:
+  - **Section A**: Reasoning Trace
+  - **Section B**: Discharge Timing Dynamics
+  - **Section C**: SNF Patient State Transitions, Incentives, and Navigator Time Allocation
+- **Audio or Text Answers**: Answer follow-up questions via typing or audio recording
+- **Progress Tracking**: See answered/total questions per case
 
 ## Project Structure
 
 ```
 DataAnnotation_App/
 ├── app.py                              # Dashboard/Home page with login
-├── auth.py                             # Authentication module (login, register, session)
+├── auth.py                             # Authentication module (login, register, session persistence)
 ├── db.py                               # Database module (SQLAlchemy ORM, all models)
-├── session_timer.py                    # Session timeout and auto-save functionality
+├── session_timer.py                    # Session timeout, auto-save, and activity tracking
+├── transcribe.py                       # Audio transcription with OpenAI Whisper
+├── openai_integration.py               # OpenAI GPT integration for follow-up questions
 ├── pages/
 │   ├── 1_Abbreviated_Intake.py         # Short 8-question intake form
 │   ├── 2_Full_Intake.py                # Comprehensive 20+ question intake form
 │   ├── 3_Case_Viewer.py                # View and export saved cases
 │   ├── 4_Follow_On_Questions.py        # Answer AI-generated follow-up questions
-│   └── 5_Admin_Settings.py             # Admin configuration page
+│   └── 5_Admin_Settings.py             # Admin configuration and audio transcription manager
 ├── .streamlit/
 │   └── config.toml                     # Streamlit server configuration
 ├── requirements.txt                    # Python dependencies
+├── FUTURE_FEATURES.md                  # Planned features and roadmap
 ├── .gitignore                          # Git ignore patterns
 └── README.md                           # This file
 ```
@@ -75,6 +94,7 @@ DataAnnotation_App/
    ```bash
    DATABASE_URL=postgresql://user:password@host:port/database
    OPENAI_API_KEY=your-openai-api-key
+   ADMIN_PASSWORD=your-secure-admin-password
    ```
 
 5. **Run the application**:
@@ -106,7 +126,8 @@ OPENAI_API_KEY = "your-openai-api-key"
 ### Session Configuration
 
 The app is configured for Streamlit Cloud's 30-minute session timeout:
-- Session warnings start at 25 minutes
+- Session warnings start at 25 minutes (5 minutes before timeout)
+- Warnings auto-dismiss when user continues working (activity detected)
 - Auto-save interval: 2 minutes
 - Configuration in `.streamlit/config.toml`
 
@@ -218,42 +239,55 @@ Work-in-progress cases for auto-save.
    - Choose **Abbreviated Intake** (quick) or **Full Intake** (comprehensive)
    - Fill in patient demographics (age, gender, race, SNF state)
    - Answer narrative questions by **typing** or **recording audio**
-   - Audio is automatically transcribed
    - Drafts auto-save every 2 minutes
+   - Click **Save Draft** to manually save progress
+   - Click **Save Case** when complete
 
 3. **Answer Follow-up Questions**:
-   - After saving a case, AI-generated follow-up questions appear
+   - After saving a case, AI-generated follow-up questions are created
    - Go to **Follow-On Questions** page to answer them
    - Questions are grouped into three sections (A, B, C)
+   - Answer via typing or audio recording
+   - Progress is tracked per case
 
 4. **Review Your Cases**:
    - Use **Case Viewer** to see all your saved cases
    - Cases are numbered: Case 1, Case 2, etc.
    - Download cases as JSON for offline review
 
+5. **Session Management**:
+   - Sessions timeout after 30 minutes of inactivity
+   - Warnings appear at 25 minutes and auto-dismiss when you continue working
+   - Your login persists across page refreshes
+
 ### For Admins
 
-1. Go to **Case Viewer** and select "View All Cases (Admin)"
+1. Go to **Admin Settings** page
 2. Enter the admin password
-3. Select a user from the dropdown to view their cases
+3. Available features:
+   - **Transcription Settings**: Configure Whisper model size
+   - **User Statistics**: View registered users and users with cases
+   - **Audio Transcription Manager**:
+     - Select any case to view audio recordings
+     - Play back audio responses
+     - Generate transcripts with Whisper
+     - Edit and save transcripts
 
-4. Go to **Admin Settings** page for:
-   - Configure Whisper transcription model size
-   - View user statistics
-   - See registered users list
+4. Go to **Case Viewer** and select "View All Cases (Admin)" to view any user's cases
 
 ## AI Features
 
 ### Follow-up Question Generation
 After saving a case, the app uses OpenAI GPT to generate follow-up questions organized into three sections:
-- **Section A**: Reasoning Trace
-- **Section B**: Discharge Timing Dynamics
-- **Section C**: SNF Patient State Transitions, Incentives, and Navigator Time Allocation
+- **Section A**: Reasoning Trace - Questions about clinical decision-making
+- **Section B**: Discharge Timing Dynamics - Questions about timing and readiness
+- **Section C**: SNF Patient State Transitions, Incentives, and Navigator Time Allocation - Questions about transitions and resources
 
 ### Audio Transcription
 - Uses OpenAI Whisper for speech-to-text
 - Configurable model size (tiny to large) via Admin Settings
 - Transcription is admin-only (not shown to regular users)
+- Supports editing transcripts after generation
 
 ## Dependencies
 
@@ -270,7 +304,19 @@ openai>=1.0.0
 
 ## Version History
 
-- **Latest**:
+- **v1.2** (Current):
+  - Session timeout warning auto-dismisses when user continues working
+  - Number input fields show placeholder instead of 0 on fresh login
+  - Fixed draft detection false positives
+  - Added login persistence across page refreshes
+
+- **v1.1**:
+  - Audio Transcription Manager in Admin Settings
+  - Follow-on questions audio recording support
+  - Draft loading properly restores all form fields
+  - Fixed case closing after saving follow-on answers
+
+- **v1.0**:
   - Case ID format: `{username}_{number}` (replaces UUID)
   - User tracking via `user_name` column
   - Draft case auto-save functionality
