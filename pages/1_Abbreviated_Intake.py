@@ -173,13 +173,15 @@ if 'abbrev_demographics' not in st.session_state:
         'age': None,
         'gender': '',
         'race': '',
-        'state': ''
+        'state': '',
+        'snf_name': ''
     }
 if 'abbrev_services' not in st.session_state:
     st.session_state.abbrev_services = {
         'snf_days': None,
         'services_discussed': '',
-        'services_accepted': ''
+        'services_accepted': '',
+        'services_utilized_after_discharge': ''
     }
 
 # Check if sample case load was requested (must happen before widgets are created)
@@ -228,9 +230,11 @@ def save_current_draft():
             gender=st.session_state.abbrev_demographics.get('gender') or None,
             race=st.session_state.abbrev_demographics.get('race') or None,
             state=st.session_state.abbrev_demographics.get('state') or None,
+            snf_name=st.session_state.abbrev_demographics.get('snf_name') or None,
             snf_days=st.session_state.abbrev_services.get('snf_days'),
             services_discussed=st.session_state.abbrev_services.get('services_discussed') or None,
             services_accepted=st.session_state.abbrev_services.get('services_accepted') or None,
+            services_utilized_after_discharge=st.session_state.abbrev_services.get('services_utilized_after_discharge') or None,
             answers=st.session_state.abbrev_answers,
             audio_flags=audio_flags
         )
@@ -247,7 +251,8 @@ def load_draft_to_session(draft):
         'age': draft.age_at_snf_stay,
         'gender': draft.gender or '',
         'race': draft.race or '',
-        'state': draft.state or ''
+        'state': draft.state or '',
+        'snf_name': getattr(draft, 'snf_name', '') or ''
     }
 
     # Also set the widget keys directly so Streamlit uses these values
@@ -259,12 +264,15 @@ def load_draft_to_session(draft):
         st.session_state.abbrev_race = draft.race
     if draft.state:
         st.session_state.abbrev_state = draft.state
+    if getattr(draft, 'snf_name', None):
+        st.session_state.abbrev_snf_name = draft.snf_name
 
     # Load services
     st.session_state.abbrev_services = {
         'snf_days': draft.snf_days,
         'services_discussed': draft.services_discussed or '',
-        'services_accepted': draft.services_accepted or ''
+        'services_accepted': draft.services_accepted or '',
+        'services_utilized_after_discharge': getattr(draft, 'services_utilized_after_discharge', '') or ''
     }
 
     # Also set service widget keys
@@ -274,6 +282,8 @@ def load_draft_to_session(draft):
         st.session_state.abbrev_services_discussed = draft.services_discussed
     if draft.services_accepted:
         st.session_state.abbrev_services_accepted = draft.services_accepted
+    if getattr(draft, 'services_utilized_after_discharge', None):
+        st.session_state.abbrev_services_utilized = draft.services_utilized_after_discharge
 
     # Load answers - set both the dict and the individual widget keys
     answers = json.loads(draft.answers_json) if draft.answers_json else {}
@@ -294,18 +304,21 @@ def clear_form_state():
         'age': None,
         'gender': '',
         'race': '',
-        'state': ''
+        'state': '',
+        'snf_name': ''
     }
     st.session_state.abbrev_services = {
         'snf_days': None,
         'services_discussed': '',
-        'services_accepted': ''
+        'services_accepted': '',
+        'services_utilized_after_discharge': ''
     }
     st.session_state.abbrev_draft_loaded = False
 
     # Clear widget keys to ensure fresh form
-    for key in ['abbrev_age', 'abbrev_gender', 'abbrev_race', 'abbrev_state',
-                'abbrev_snf_days', 'abbrev_services_discussed', 'abbrev_services_accepted']:
+    for key in ['abbrev_age', 'abbrev_gender', 'abbrev_race', 'abbrev_state', 'abbrev_snf_name',
+                'abbrev_snf_days', 'abbrev_services_discussed', 'abbrev_services_accepted',
+                'abbrev_services_utilized']:
         if key in st.session_state:
             del st.session_state[key]
     # Clear text area widget keys
@@ -376,6 +389,8 @@ if 'abbrev_race' not in st.session_state:
 if 'abbrev_state' not in st.session_state:
     default_state = st.session_state.abbrev_demographics.get('state', '')
     st.session_state.abbrev_state = default_state if default_state in US_STATES else ""
+if 'abbrev_snf_name' not in st.session_state:
+    st.session_state.abbrev_snf_name = st.session_state.abbrev_demographics.get('snf_name', '')
 
 with col1:
     age = st.number_input(
@@ -409,11 +424,20 @@ with col2:
         key="abbrev_state"
     )
 
+# SNF Name field (full width)
+snf_name = st.text_input(
+    "SNF Name",
+    help="Name of the Skilled Nursing Facility",
+    placeholder="Enter the name of the SNF...",
+    key="abbrev_snf_name"
+)
+
 # Update session state demographics for draft saving
 st.session_state.abbrev_demographics['age'] = age
 st.session_state.abbrev_demographics['gender'] = gender
 st.session_state.abbrev_demographics['race'] = race
 st.session_state.abbrev_demographics['state'] = state
+st.session_state.abbrev_demographics['snf_name'] = snf_name
 
 st.markdown("---")
 
@@ -477,6 +501,8 @@ if 'abbrev_services_accepted' not in st.session_state:
     st.session_state.abbrev_services_accepted = st.session_state.abbrev_services.get('services_accepted', '')
 if 'abbrev_snf_days' not in st.session_state:
     st.session_state.abbrev_snf_days = st.session_state.abbrev_services.get('snf_days')
+if 'abbrev_services_utilized' not in st.session_state:
+    st.session_state.abbrev_services_utilized = st.session_state.abbrev_services.get('services_utilized_after_discharge', '')
 
 col1, col2 = st.columns(2)
 
@@ -506,10 +532,19 @@ snf_days = st.number_input(
     key="abbrev_snf_days"
 )
 
+services_utilized_after_discharge = st.text_area(
+    "Did the patient utilize the discussed services after discharge? If no, please explain why.",
+    height=100,
+    help="Describe whether the patient used the services after leaving the SNF and any reasons if they did not",
+    placeholder="e.g., Yes, patient utilized all services as planned. / No, patient declined home health due to...",
+    key="abbrev_services_utilized"
+)
+
 # Update session state services for draft saving
 st.session_state.abbrev_services['snf_days'] = snf_days
 st.session_state.abbrev_services['services_discussed'] = services_discussed
 st.session_state.abbrev_services['services_accepted'] = services_accepted
+st.session_state.abbrev_services['services_utilized_after_discharge'] = services_utilized_after_discharge
 
 st.markdown("---")
 
@@ -556,9 +591,11 @@ if save_case_clicked:
                 gender=gender,
                 race=race,
                 state=state,
+                snf_name=snf_name if snf_name else None,
                 snf_days=int(snf_days) if snf_days is not None else None,
                 services_discussed=services_discussed if services_discussed else None,
                 services_accepted=services_accepted if services_accepted else None,
+                services_utilized_after_discharge=services_utilized_after_discharge if services_utilized_after_discharge else None,
                 answers=st.session_state.abbrev_answers
             )
 

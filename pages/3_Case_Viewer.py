@@ -10,7 +10,7 @@ import streamlit as st
 import json
 from db import (
     get_case_by_id, get_cases_by_user_name, get_all_user_names,
-    init_db
+    get_follow_up_questions_for_case, init_db
 )
 from auth import require_auth, get_current_username, is_authenticated, init_session_state
 
@@ -148,6 +148,11 @@ def display_case(case, case_number=None):
         st.markdown(f"**SNF State**")
         st.markdown(f"{case.state}")
 
+    # SNF Name (if available)
+    snf_name = getattr(case, 'snf_name', None)
+    if snf_name:
+        st.markdown(f"**SNF Name:** {snf_name}")
+
     st.markdown("---")
 
     # Services section
@@ -168,6 +173,12 @@ def display_case(case, case_number=None):
             st.markdown(case.services_accepted)
         else:
             st.markdown("*Not recorded*")
+
+    # Post-discharge services utilization
+    services_utilized = getattr(case, 'services_utilized_after_discharge', None)
+    if services_utilized:
+        st.markdown("**Services Utilized After Discharge**")
+        st.markdown(services_utilized)
 
     st.markdown("---")
 
@@ -223,6 +234,45 @@ def display_case(case, case_number=None):
 
     st.markdown("---")
 
+    # Follow-up Questions and Answers section
+    st.subheader("❓ Follow-Up Questions & Answers")
+
+    follow_up_questions = get_follow_up_questions_for_case(case.case_id)
+
+    if follow_up_questions:
+        # Group by section
+        sections = {"A": [], "B": [], "C": []}
+        for fq in follow_up_questions:
+            if fq.section in sections:
+                sections[fq.section].append(fq)
+
+        section_names = {
+            "A": "Section A: Reasoning Trace",
+            "B": "Section B: Discharge Timing Dynamics",
+            "C": "Section C: SNF Patient State Transitions & Navigator Time Allocation"
+        }
+
+        # Count answered questions
+        total = len(follow_up_questions)
+        answered = sum(1 for fq in follow_up_questions if fq.answer_text)
+        st.markdown(f"**Progress:** {answered}/{total} questions answered")
+
+        for section_key in ["A", "B", "C"]:
+            section_questions = sections[section_key]
+            if section_questions:
+                with st.expander(f"📌 {section_names[section_key]} ({len([q for q in section_questions if q.answer_text])}/{len(section_questions)} answered)"):
+                    for fq in sorted(section_questions, key=lambda x: x.question_number):
+                        st.markdown(f"**Q{fq.question_number}:** {fq.question_text}")
+                        if fq.answer_text:
+                            st.success(f"**Answer:** {fq.answer_text}")
+                        else:
+                            st.warning("*Not yet answered*")
+                        st.markdown("---")
+    else:
+        st.info("No follow-up questions generated for this case yet.")
+
+    st.markdown("---")
+
     # Export section
     st.subheader("📥 Export")
 
@@ -273,7 +323,10 @@ if access_mode == "View My Cases":
         # Let user select which case to view (numbered Case 1, Case 2, etc.)
         case_options = {}
         for idx, c in enumerate(user_cases, start=1):
-            label = f"Case {idx} ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}"
+            # Format time in 12-hour format with AM/PM
+            time_str = c.created_at.strftime('%b %d, %Y %I:%M %p') if c.created_at else "N/A"
+            # Include demographics for easier identification
+            label = f"Case {idx} ({c.age_at_snf_stay}, {c.race}, {c.state}) - {time_str}"
             case_options[label] = (c.case_id, idx)
 
         selected_case_label = st.selectbox(
@@ -340,7 +393,10 @@ else:
                         # Let admin select which case to view (numbered Case 1, Case 2, etc.)
                         case_options = {}
                         for idx, c in enumerate(user_cases, start=1):
-                            label = f"Case {idx} ({c.created_at.strftime('%Y-%m-%d %H:%M')}) - {c.intake_version.title()}"
+                            # Format time in 12-hour format with AM/PM
+                            time_str = c.created_at.strftime('%b %d, %Y %I:%M %p') if c.created_at else "N/A"
+                            # Include demographics for easier identification
+                            label = f"Case {idx} ({c.age_at_snf_stay}, {c.race}, {c.state}) - {time_str}"
                             case_options[label] = (c.case_id, idx)
 
                         selected_case_label = st.selectbox(

@@ -60,11 +60,13 @@ class Case(Base):
     gender = Column(Text, nullable=False)
     race = Column(Text, nullable=False)
     state = Column(Text, nullable=False)
-    
+    snf_name = Column(Text, nullable=True)  # Name of the SNF facility
+
     # Additional fields
     snf_days = Column(Integer, nullable=True)
     services_discussed = Column(Text, nullable=True)
     services_accepted = Column(Text, nullable=True)
+    services_utilized_after_discharge = Column(Text, nullable=True)  # Post-discharge services utilization
     
     # JSON string storing all narrative answers keyed by stable IDs
     answers_json = Column(Text, nullable=False, default="{}")
@@ -81,9 +83,11 @@ class Case(Base):
             "gender": self.gender,
             "race": self.race,
             "state": self.state,
+            "snf_name": self.snf_name,
             "snf_days": self.snf_days,
             "services_discussed": self.services_discussed,
             "services_accepted": self.services_accepted,
+            "services_utilized_after_discharge": self.services_utilized_after_discharge,
             "answers": json.loads(self.answers_json) if self.answers_json else {}
         }
 
@@ -214,11 +218,13 @@ class DraftCase(Base):
     gender = Column(Text, nullable=True)
     race = Column(Text, nullable=True)
     state = Column(Text, nullable=True)
+    snf_name = Column(Text, nullable=True)
 
     # Additional fields
     snf_days = Column(Integer, nullable=True)
     services_discussed = Column(Text, nullable=True)
     services_accepted = Column(Text, nullable=True)
+    services_utilized_after_discharge = Column(Text, nullable=True)
 
     # JSON string storing all narrative answers keyed by stable IDs
     answers_json = Column(Text, nullable=False, default="{}")
@@ -658,9 +664,11 @@ def create_case(
     gender: str,
     race: str,
     state: str,
+    snf_name: Optional[str],
     snf_days: Optional[int],
     services_discussed: Optional[str],
     services_accepted: Optional[str],
+    services_utilized_after_discharge: Optional[str],
     answers: Dict[str, str]
 ) -> str:
     """
@@ -673,9 +681,11 @@ def create_case(
         gender: Patient's gender
         race: Patient's race
         state: State where SNF is located
+        snf_name: Name of the SNF facility (nullable)
         snf_days: Number of days in SNF (nullable)
         services_discussed: Free text of services discussed
         services_accepted: Free text of services accepted
+        services_utilized_after_discharge: Whether patient used services after discharge (nullable)
         answers: Dictionary of narrative answers keyed by question ID
 
     Returns:
@@ -695,9 +705,11 @@ def create_case(
             gender=gender,
             race=race,
             state=state,
+            snf_name=snf_name,
             snf_days=snf_days,
             services_discussed=services_discussed,
             services_accepted=services_accepted,
+            services_utilized_after_discharge=services_utilized_after_discharge,
             answers_json=json.dumps(answers)
         )
         session.add(case)
@@ -957,6 +969,9 @@ def get_cases_with_pending_follow_ups(user_name: str) -> List[Dict[str, Any]]:
                     "case_id": case.case_id,
                     "intake_version": case.intake_version,
                     "created_at": case.created_at,
+                    "age_at_snf_stay": case.age_at_snf_stay,
+                    "race": case.race,
+                    "state": case.state,
                     "total_questions": total_questions,
                     "answered_questions": total_questions - unanswered,
                     "unanswered_questions": unanswered,
@@ -1093,9 +1108,11 @@ def save_draft_case(
     gender: Optional[str] = None,
     race: Optional[str] = None,
     state: Optional[str] = None,
+    snf_name: Optional[str] = None,
     snf_days: Optional[int] = None,
     services_discussed: Optional[str] = None,
     services_accepted: Optional[str] = None,
+    services_utilized_after_discharge: Optional[str] = None,
     answers: Optional[Dict[str, str]] = None,
     audio_flags: Optional[Dict[str, bool]] = None
 ) -> str:
@@ -1109,9 +1126,11 @@ def save_draft_case(
         gender: Patient's gender (nullable)
         race: Patient's race (nullable)
         state: SNF state (nullable)
+        snf_name: Name of the SNF facility (nullable)
         snf_days: Number of days in SNF (nullable)
         services_discussed: Services discussed text (nullable)
         services_accepted: Services accepted text (nullable)
+        services_utilized_after_discharge: Whether patient used services after discharge (nullable)
         answers: Dictionary of narrative answers
         audio_flags: Dictionary of question_id -> bool indicating if audio exists
 
@@ -1134,9 +1153,11 @@ def save_draft_case(
             existing.gender = gender
             existing.race = race
             existing.state = state
+            existing.snf_name = snf_name
             existing.snf_days = snf_days
             existing.services_discussed = services_discussed
             existing.services_accepted = services_accepted
+            existing.services_utilized_after_discharge = services_utilized_after_discharge
             existing.answers_json = json.dumps(answers or {})
             existing.audio_json = json.dumps(audio_flags or {})
             existing.updated_at = datetime.utcnow()
@@ -1151,9 +1172,11 @@ def save_draft_case(
                 gender=gender,
                 race=race,
                 state=state,
+                snf_name=snf_name,
                 snf_days=snf_days,
                 services_discussed=services_discussed,
                 services_accepted=services_accepted,
+                services_utilized_after_discharge=services_utilized_after_discharge,
                 answers_json=json.dumps(answers or {}),
                 audio_json=json.dumps(audio_flags or {})
             )

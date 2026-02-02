@@ -194,14 +194,23 @@ for case_info in cases_with_followups:
     total = case_info["total_questions"]
     status = "✅ Complete" if case_info["is_complete"] else f"⏳ {answered}/{total} answered"
 
+    # Format time in 12-hour format with AM/PM
+    created_at = case_info.get("created_at")
+    time_str = created_at.strftime('%b %d, %Y %I:%M %p') if created_at else "N/A"
+
+    # Get demographics for easier identification
+    age = case_info.get("age_at_snf_stay", "N/A")
+    race = case_info.get("race", "N/A")
+    state = case_info.get("state", "N/A")
+
     # Get the case number from our mapping
     if case_id in case_numbers:
         intake_type, case_num = case_numbers[case_id]
-        display_name = f"{intake_type} - Case {case_num} - {status}"
+        display_name = f"Case {case_num} ({age}, {race}, {state}) - {time_str} - {status}"
     else:
         # Fallback if not found
         intake_type = "Abbreviated Intake" if case_info["intake_version"] == "abbrev" else "Full Intake"
-        display_name = f"{intake_type} - {status}"
+        display_name = f"{intake_type} ({age}, {race}, {state}) - {time_str} - {status}"
 
     case_options.append(display_name)
     case_id_map[display_name] = case_id
