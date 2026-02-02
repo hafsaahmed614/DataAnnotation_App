@@ -609,9 +609,50 @@ def get_whisper_settings() -> Dict[str, str]:
     }
 
 
+def _run_migrations():
+    """
+    Run database migrations to add new columns if they don't exist.
+    This ensures backward compatibility when new fields are added to models.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+
+    # Define migrations: (table_name, column_name, column_type)
+    migrations = [
+        # Cases table migrations
+        ("cases", "snf_name", "TEXT"),
+        ("cases", "services_utilized_after_discharge", "TEXT"),
+        # Draft cases table migrations
+        ("draft_cases", "snf_name", "TEXT"),
+        ("draft_cases", "services_utilized_after_discharge", "TEXT"),
+    ]
+
+    with engine.connect() as conn:
+        for table_name, column_name, column_type in migrations:
+            # Check if table exists
+            if table_name not in inspector.get_table_names():
+                continue
+
+            # Get existing columns
+            existing_columns = [col['name'] for col in inspector.get_columns(table_name)]
+
+            # Add column if it doesn't exist
+            if column_name not in existing_columns:
+                try:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+                    conn.commit()
+                except Exception as e:
+                    # Column might already exist or other error - log and continue
+                    print(f"Migration note: Could not add {column_name} to {table_name}: {e}")
+
+
 def init_db():
     """Initialize database tables if they don't exist."""
     Base.metadata.create_all(bind=engine)
+
+    # Run migrations to add new columns if they don't exist
+    _run_migrations()
 
 
 def get_session():
