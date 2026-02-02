@@ -72,25 +72,30 @@ CREATE TABLE reasoning_annotations (
 
 ---
 
-### 3. Follow-On Questions in Case Viewer
+### 3. Patient Demographics Enhancements
 
 **Status**: Planned
 
-**Description**: Display follow-on questions and their answers directly in the Case Viewer for a complete case overview.
+**Description**: Add additional date tracking fields to patient demographics for better case documentation and timeline tracking.
 
 **Features**:
-- **Integrated View**: Show follow-up questions alongside case details in Case Viewer
-- **Section Grouping**: Display questions organized by section (A, B, C)
-- **Answer Status**: Visual indicators for answered vs. unanswered questions
-- **Expandable Sections**: Collapsible question sections to manage screen space
-- **Audio Playback**: Play audio answers directly from Case Viewer
-- **Export Enhancement**: Include follow-up Q&A in JSON export
+- **SNF Admission Date**: Date when the patient was admitted to the Skilled Nursing Facility
+- **Patient Navigator Contact Date**: Date when the patient navigator first made contact with the patient
 
 **Implementation Notes**:
-- Modify `3_Case_Viewer.py` to fetch and display follow-up questions
-- Add toggle to show/hide follow-up questions section
-- Include answer timestamps and completion percentage
-- Consider adding a "Complete Follow-ups" button linking to the Follow-On Questions page
+- Add `snf_admission_date` and `navigator_contact_date` columns to Case and DraftCase models
+- Add date picker widgets to both Abbreviated and Full Intake forms in Patient Demographics section
+- Include these dates in Case Viewer display and JSON exports
+- Update sample case data to include example dates
+- Consider adding date validation (e.g., admission date should be before or on contact date)
+
+**Database Schema Addition**:
+```sql
+ALTER TABLE cases ADD COLUMN snf_admission_date DATE;
+ALTER TABLE cases ADD COLUMN navigator_contact_date DATE;
+ALTER TABLE draft_cases ADD COLUMN snf_admission_date DATE;
+ALTER TABLE draft_cases ADD COLUMN navigator_contact_date DATE;
+```
 
 ---
 
@@ -208,6 +213,11 @@ CREATE TABLE reasoning_annotations (
 - [x] Audio Transcription Manager in Admin Settings
 - [x] Session timeout warning auto-dismiss on activity
 - [x] Personal case numbering per user
+- [x] Follow-on questions displayed in Case Viewer (with section grouping and expandable UI)
+- [x] SNF Name field in patient demographics
+- [x] Post-discharge services utilization tracking
+- [x] Enhanced case dropdown identifiers (age, race, state) with 12-hour time format
+- [x] Load Sample Case button for demo purposes (restricted to whitelisted users)
 
 ---
 
