@@ -107,6 +107,12 @@ SAMPLE_CASE_DATA = {
     }
 }
 
+# Users allowed to access the demo feature (Load Sample Case button)
+DEMO_ALLOWED_USERS = [
+    "Hafsa Ahmed",
+    "Mohsin Ansari",
+]
+
 # Abbreviated intake narrative questions with stable IDs
 ABBREV_QUESTIONS = {
     "aq1": {
@@ -627,12 +633,14 @@ with st.sidebar:
     - Services discussed/accepted
     """)
 
-    st.markdown("---")
-    st.markdown("### Demo Mode")
-    if st.button("📋 Load Sample Case", use_container_width=True):
-        st.session_state.load_sample_case_requested = True
-        st.rerun()
-    st.caption("Fills form with sample data for demo purposes. Review and click Save Case when ready.")
+    # Only show Demo Mode for allowed users
+    if current_user in DEMO_ALLOWED_USERS:
+        st.markdown("---")
+        st.markdown("### Demo Mode")
+        if st.button("📋 Load Sample Case", use_container_width=True):
+            st.session_state.load_sample_case_requested = True
+            st.rerun()
+        st.caption("Fills form with sample data for demo purposes. Review and click Save Case when ready.")
 
     st.markdown("---")
     st.markdown("### Audio Recording")
