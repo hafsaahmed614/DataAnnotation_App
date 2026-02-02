@@ -82,6 +82,31 @@ RACE_OPTIONS = [
     "Prefer not to say"
 ]
 
+# Sample case data for demo purposes
+SAMPLE_CASE_DATA = {
+    "demographics": {
+        "age": 65,
+        "gender": "Male",
+        "race": "White",
+        "state": "Pennsylvania"
+    },
+    "services": {
+        "snf_days": 90,
+        "services_discussed": "In home wound care services",
+        "services_accepted": "In home wound care services"
+    },
+    "answers": {
+        "aq1": "Patient was admitted to a SNF for short-term skilled care following hospital discharge. He required physical therapy after a recent leg amputation, while also receiving ongoing wound care on his remaining leg. The primary goal was for him to return home to his wife once physical therapy was completed and his wounds had sufficiently healed. Upon discharge, the plan was to arrange in-home wound care services once a week and home health visits three times per week.",
+        "aq2": "SNF social worker identified the patient as short-term, planning discharge after physical therapy and wound healing. However, discharge timing changed due to the need for a wheelchair ramp at home. With a CHC waiver, insurance covered home modifications, but discharge was delayed until ramp installation was completed. This pushed back the discharged date by a month and half",
+        "aq3": "To ensure a safe discharge, the patient needed a ramp installed at home, home health set up and ready to start with 24 hours after discharge, and the agreed upon in home wound care services in place and first appointment scheduled.",
+        "aq4": "At the first meeting with the social worker and patient, there wasn't a firm discharge date but rather an expectation of a couple weeks. This timeline was based on his physical therapy progress and healing wounds. Once ramp was ready, he could discharge.",
+        "aq5": "While the patient was still in the facility, the SNF team, family, home health, and wound care providers were all on the same page. This coordination ahead of time made for a smooth transition back to his residence.",
+        "aq6": "The SNF required that the patient's wounds were healing, in-home wound care was arranged, and home health services were ready before discharging home",
+        "aq7": "HHA was already established for the patient before his stay at the SNF, since he'd had it following his leg amputation. The HHA was OSTPA and they were ready to see him within 24 hours of discharge and start services right away.",
+        "aq8": "The HHA was given the contact information for the in-home wound care provider, allowing them to coordinate directly and share any needed updates. In addition, the HHA received facility records and the discharge summary to support the home care plan."
+    }
+}
+
 # Abbreviated intake narrative questions with stable IDs
 ABBREV_QUESTIONS = {
     "aq1": {
@@ -250,6 +275,41 @@ def clear_form_state():
     for qid in ABBREV_QUESTIONS:
         if f"text_{qid}" in st.session_state:
             del st.session_state[f"text_{qid}"]
+
+
+def load_sample_case():
+    """Load sample case data into session state for demo purposes."""
+    # Load demographics
+    st.session_state.abbrev_demographics = {
+        'age': SAMPLE_CASE_DATA["demographics"]["age"],
+        'gender': SAMPLE_CASE_DATA["demographics"]["gender"],
+        'race': SAMPLE_CASE_DATA["demographics"]["race"],
+        'state': SAMPLE_CASE_DATA["demographics"]["state"]
+    }
+
+    # Set widget keys for demographics
+    st.session_state.abbrev_age = SAMPLE_CASE_DATA["demographics"]["age"]
+    st.session_state.abbrev_gender = SAMPLE_CASE_DATA["demographics"]["gender"]
+    st.session_state.abbrev_race = SAMPLE_CASE_DATA["demographics"]["race"]
+    st.session_state.abbrev_state = SAMPLE_CASE_DATA["demographics"]["state"]
+
+    # Load services
+    st.session_state.abbrev_services = {
+        'snf_days': SAMPLE_CASE_DATA["services"]["snf_days"],
+        'services_discussed': SAMPLE_CASE_DATA["services"]["services_discussed"],
+        'services_accepted': SAMPLE_CASE_DATA["services"]["services_accepted"]
+    }
+
+    # Set widget keys for services
+    st.session_state.abbrev_snf_days = SAMPLE_CASE_DATA["services"]["snf_days"]
+    st.session_state.abbrev_services_discussed = SAMPLE_CASE_DATA["services"]["services_discussed"]
+    st.session_state.abbrev_services_accepted = SAMPLE_CASE_DATA["services"]["services_accepted"]
+
+    # Load answers
+    for qid, answer_text in SAMPLE_CASE_DATA["answers"].items():
+        st.session_state.abbrev_answers[qid] = answer_text
+        # Set the text area widget key directly
+        st.session_state[f"text_{qid}"] = answer_text
 
 
 # Check for existing draft on first load
@@ -571,6 +631,13 @@ with st.sidebar:
     - HHA coordination
     - Services discussed/accepted
     """)
+
+    st.markdown("---")
+    st.markdown("### Demo Mode")
+    if st.button("📋 Load Sample Case", use_container_width=True):
+        load_sample_case()
+        st.rerun()
+    st.caption("Fills form with sample data for demo purposes. Review and click Save Case when ready.")
 
     st.markdown("---")
     st.markdown("### Audio Recording")
