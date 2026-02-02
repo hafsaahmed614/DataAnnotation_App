@@ -452,7 +452,6 @@ for qid, question in ABBREV_QUESTIONS.items():
         # Text input
         text_answer = st.text_area(
             question["prompt"],
-            value=st.session_state.abbrev_answers[qid],
             height=120,
             help=question["help"],
             key=f"text_{qid}",
