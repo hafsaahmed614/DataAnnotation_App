@@ -42,12 +42,11 @@ Do NOT introduce new hypothetical scenarios unless clearly triggered by the case
 
 STRICT OUTPUT LIMITS
 
-- Maximum total questions: 10
-- Reasoning Trace: max 3 questions
-- Discharge Timing Dynamics: max 4 questions
-- State Transitions & Navigator Time Allocation: max 3 questions
+- Maximum total questions: 12
+- Reasoning Trace: min 4 questions
+- Discharge Timing Dynamics: min 4 questions
+- State Transitions & Navigator Time Allocation: min 4 questions
 
-If fewer questions are sufficient, ask fewer.
 
 ---
 
@@ -80,13 +79,13 @@ Only ask about a state if:
 OUTPUT FORMAT (STRICT)
 
 A) Reasoning Trace
-(1–3 short, event-anchored questions)
+(4 short, event-anchored questions)
 
 B) Discharge Timing Dynamics
-(1–4 short, event-anchored questions)
+(4 short, event-anchored questions)
 
 C) SNF Patient State Transitions & Navigator Time Allocation
-(1–3 short, event-anchored questions)
+(4 short, event-anchored questions)
 
 Do not include commentary, explanations, or extra text."""
 
