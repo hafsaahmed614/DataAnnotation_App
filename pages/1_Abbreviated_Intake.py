@@ -176,6 +176,37 @@ if 'abbrev_services' not in st.session_state:
         'services_accepted': ''
     }
 
+# Check if sample case load was requested (must happen before widgets are created)
+if st.session_state.get('load_sample_case_requested', False):
+    # Load demographics
+    st.session_state.abbrev_demographics = {
+        'age': SAMPLE_CASE_DATA["demographics"]["age"],
+        'gender': SAMPLE_CASE_DATA["demographics"]["gender"],
+        'race': SAMPLE_CASE_DATA["demographics"]["race"],
+        'state': SAMPLE_CASE_DATA["demographics"]["state"]
+    }
+    # Set widget keys for demographics
+    st.session_state.abbrev_age = SAMPLE_CASE_DATA["demographics"]["age"]
+    st.session_state.abbrev_gender = SAMPLE_CASE_DATA["demographics"]["gender"]
+    st.session_state.abbrev_race = SAMPLE_CASE_DATA["demographics"]["race"]
+    st.session_state.abbrev_state = SAMPLE_CASE_DATA["demographics"]["state"]
+    # Load services
+    st.session_state.abbrev_services = {
+        'snf_days': SAMPLE_CASE_DATA["services"]["snf_days"],
+        'services_discussed': SAMPLE_CASE_DATA["services"]["services_discussed"],
+        'services_accepted': SAMPLE_CASE_DATA["services"]["services_accepted"]
+    }
+    # Set widget keys for services
+    st.session_state.abbrev_snf_days = SAMPLE_CASE_DATA["services"]["snf_days"]
+    st.session_state.abbrev_services_discussed = SAMPLE_CASE_DATA["services"]["services_discussed"]
+    st.session_state.abbrev_services_accepted = SAMPLE_CASE_DATA["services"]["services_accepted"]
+    # Load answers
+    for qid, answer_text in SAMPLE_CASE_DATA["answers"].items():
+        st.session_state.abbrev_answers[qid] = answer_text
+        st.session_state[f"text_{qid}"] = answer_text
+    # Clear the flag
+    st.session_state.load_sample_case_requested = False
+
 
 def save_current_draft():
     """Save current form state as draft."""
@@ -275,41 +306,6 @@ def clear_form_state():
     for qid in ABBREV_QUESTIONS:
         if f"text_{qid}" in st.session_state:
             del st.session_state[f"text_{qid}"]
-
-
-def load_sample_case():
-    """Load sample case data into session state for demo purposes."""
-    # Load demographics
-    st.session_state.abbrev_demographics = {
-        'age': SAMPLE_CASE_DATA["demographics"]["age"],
-        'gender': SAMPLE_CASE_DATA["demographics"]["gender"],
-        'race': SAMPLE_CASE_DATA["demographics"]["race"],
-        'state': SAMPLE_CASE_DATA["demographics"]["state"]
-    }
-
-    # Set widget keys for demographics
-    st.session_state.abbrev_age = SAMPLE_CASE_DATA["demographics"]["age"]
-    st.session_state.abbrev_gender = SAMPLE_CASE_DATA["demographics"]["gender"]
-    st.session_state.abbrev_race = SAMPLE_CASE_DATA["demographics"]["race"]
-    st.session_state.abbrev_state = SAMPLE_CASE_DATA["demographics"]["state"]
-
-    # Load services
-    st.session_state.abbrev_services = {
-        'snf_days': SAMPLE_CASE_DATA["services"]["snf_days"],
-        'services_discussed': SAMPLE_CASE_DATA["services"]["services_discussed"],
-        'services_accepted': SAMPLE_CASE_DATA["services"]["services_accepted"]
-    }
-
-    # Set widget keys for services
-    st.session_state.abbrev_snf_days = SAMPLE_CASE_DATA["services"]["snf_days"]
-    st.session_state.abbrev_services_discussed = SAMPLE_CASE_DATA["services"]["services_discussed"]
-    st.session_state.abbrev_services_accepted = SAMPLE_CASE_DATA["services"]["services_accepted"]
-
-    # Load answers
-    for qid, answer_text in SAMPLE_CASE_DATA["answers"].items():
-        st.session_state.abbrev_answers[qid] = answer_text
-        # Set the text area widget key directly
-        st.session_state[f"text_{qid}"] = answer_text
 
 
 # Check for existing draft on first load
@@ -635,7 +631,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Demo Mode")
     if st.button("📋 Load Sample Case", use_container_width=True):
-        load_sample_case()
+        st.session_state.load_sample_case_requested = True
         st.rerun()
     st.caption("Fills form with sample data for demo purposes. Review and click Save Case when ready.")
 
