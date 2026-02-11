@@ -229,13 +229,22 @@ if 'last_saved_case_id' in st.session_state and st.session_state.last_saved_case
 # Case selection section
 st.header("1. Select a Case")
 
-# ALWAYS update case_selector from selected_followup_case if it exists
-# This handles the case where the display name changed (e.g., "4/7" -> "5/7 answered")
-if st.session_state.selected_followup_case and st.session_state.selected_followup_case in reverse_case_id_map:
-    # Update to the new display name (which includes updated status)
-    st.session_state.case_selector = reverse_case_id_map[st.session_state.selected_followup_case]
+# Handle case_selector synchronization carefully:
+# - Only update if the display name is stale (status changed but same case)
+# - Do NOT override if user just selected a different case
+current_selector = st.session_state.get("case_selector")
+if current_selector and current_selector != "Select a case...":
+    # Check if current selector maps to a valid case
+    current_case_id = case_id_map.get(current_selector)
+    if current_case_id is None:
+        # Display name is stale (e.g., status changed from "4/7" to "5/7")
+        # Try to recover using the stored selected_followup_case
+        if st.session_state.selected_followup_case and st.session_state.selected_followup_case in reverse_case_id_map:
+            st.session_state.case_selector = reverse_case_id_map[st.session_state.selected_followup_case]
+        else:
+            st.session_state.case_selector = "Select a case..."
+    # If current_case_id is valid, don't override - respect user's selection
 elif "case_selector" not in st.session_state:
-    # First load with no selection
     st.session_state.case_selector = "Select a case..."
 
 selected_display = st.selectbox(
