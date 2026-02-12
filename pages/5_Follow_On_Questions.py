@@ -53,6 +53,8 @@ st.markdown("""
     [data-testid="stSidebarNav"] ul li:first-child a::before {
         content: "Dashboard" !important;
         visibility: visible !important;
+        font-weight: 400 !important;
+        font-size: 14px !important;
     }
 </style>
 """, unsafe_allow_html=True)
