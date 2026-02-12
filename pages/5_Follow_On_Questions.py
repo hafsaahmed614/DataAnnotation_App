@@ -224,17 +224,24 @@ for case_info in cases_with_followups:
     # Get the case number from our mapping
     if case_id in case_numbers:
         intake_type, case_num = case_numbers[case_id]
-        display_name = f"Case {case_num} ({age}, {race}, {state}) - {time_str} - {status}"
+        # Shorten intake type for display
+        if intake_type == "Abbreviated Intake":
+            short_type = "Abbreviated"
+        elif intake_type == "Abbreviated General":
+            short_type = "Abbrev General"
+        else:
+            short_type = "Full"
+        display_name = f"Case {case_num} - {short_type} ({age}, {race}, {state}) - {time_str} - {status}"
     else:
         # Fallback if not found
         intake_version = case_info["intake_version"]
         if intake_version == "abbrev":
-            intake_type = "Abbreviated Intake"
+            short_type = "Abbreviated"
         elif intake_version == "abbrev_gen":
-            intake_type = "Abbreviated General"
+            short_type = "Abbrev General"
         else:
-            intake_type = "Full Intake"
-        display_name = f"{intake_type} ({age}, {race}, {state}) - {time_str} - {status}"
+            short_type = "Full"
+        display_name = f"Case ? - {short_type} ({age}, {race}, {state}) - {time_str} - {status}"
 
     case_options.append(display_name)
     case_id_map[display_name] = case_id
