@@ -504,8 +504,10 @@ with main_col:
         # Calculate total answered (from database)
         total_answered = sum(1 for q in questions if q.answer_text is not None) + saved_count
 
-        if saved_count > 0:
-            st.success(f"✅ Saved {saved_count} new answer(s)! Total: {total_answered}/{total_questions} answered")
+        if saved_count > 0 and total_answered == total_questions:
+            st.success(f"✅ All {total_questions} questions answered! Case complete.")
+        elif saved_count > 0:
+            st.success(f"✅ Saved {saved_count} new answer(s). {total_answered}/{total_questions} answered.")
         elif total_answered == total_questions:
             st.success(f"✅ All {total_questions} questions already answered!")
         elif already_saved_count > 0:
