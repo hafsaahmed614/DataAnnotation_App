@@ -123,6 +123,30 @@ ABBREV_GENERAL_SECTIONS = {
 }
 
 
+def get_case_numbers_by_type(cases):
+    """
+    Get case numbers for each case, separated by intake type.
+    Returns a dict mapping case_id to (intake_type_label, case_number).
+    """
+    abbrev_count = 0
+    abbrev_gen_count = 0
+    full_count = 0
+    case_numbers = {}
+
+    for case in cases:  # Already ordered by created_at ascending
+        if case.intake_version == "abbrev":
+            abbrev_count += 1
+            case_numbers[case.case_id] = ("Abbreviated", abbrev_count)
+        elif case.intake_version == "abbrev_gen":
+            abbrev_gen_count += 1
+            case_numbers[case.case_id] = ("Abbrev General", abbrev_gen_count)
+        else:
+            full_count += 1
+            case_numbers[case.case_id] = ("Full", full_count)
+
+    return case_numbers
+
+
 def display_case(case, case_number=None):
     """Display a single case with all its details."""
 
@@ -352,14 +376,19 @@ if access_mode == "View My Cases":
         st.success(f"Found {len(user_cases)} case(s)")
         st.markdown("---")
 
-        # Let user select which case to view (numbered Case 1, Case 2, etc.)
+        # Get case numbers by intake type
+        case_numbers = get_case_numbers_by_type(user_cases)
+
+        # Let user select which case to view
         case_options = {}
-        for idx, c in enumerate(user_cases, start=1):
+        for c in user_cases:
             # Format time in 12-hour format with AM/PM
             time_str = c.created_at.strftime('%b %d, %Y %I:%M %p') if c.created_at else "N/A"
-            # Include demographics for easier identification
-            label = f"Case {idx} ({c.age_at_snf_stay}, {c.race}, {c.state}) - {time_str}"
-            case_options[label] = (c.case_id, idx)
+            # Get intake type and case number
+            intake_type, case_num = case_numbers.get(c.case_id, ("Unknown", "?"))
+            # Include intake type and demographics for easier identification
+            label = f"Case {case_num} - {intake_type} ({c.age_at_snf_stay}, {c.race}, {c.state}) - {time_str}"
+            case_options[label] = (c.case_id, case_num)
 
         selected_case_label = st.selectbox(
             "Select a case to view:",
@@ -422,14 +451,19 @@ else:
                         st.markdown(f"### Cases for: **{selected_user}** ({len(user_cases)} total)")
                         st.markdown("---")
 
-                        # Let admin select which case to view (numbered Case 1, Case 2, etc.)
+                        # Get case numbers by intake type
+                        case_numbers = get_case_numbers_by_type(user_cases)
+
+                        # Let admin select which case to view
                         case_options = {}
-                        for idx, c in enumerate(user_cases, start=1):
+                        for c in user_cases:
                             # Format time in 12-hour format with AM/PM
                             time_str = c.created_at.strftime('%b %d, %Y %I:%M %p') if c.created_at else "N/A"
-                            # Include demographics for easier identification
-                            label = f"Case {idx} ({c.age_at_snf_stay}, {c.race}, {c.state}) - {time_str}"
-                            case_options[label] = (c.case_id, idx)
+                            # Get intake type and case number
+                            intake_type, case_num = case_numbers.get(c.case_id, ("Unknown", "?"))
+                            # Include intake type and demographics for easier identification
+                            label = f"Case {case_num} - {intake_type} ({c.age_at_snf_stay}, {c.race}, {c.state}) - {time_str}"
+                            case_options[label] = (c.case_id, case_num)
 
                         selected_case_label = st.selectbox(
                             "Select a case to view:",
