@@ -302,11 +302,19 @@ def display_case(case, case_number=None):
             if fq.section in sections:
                 sections[fq.section].append(fq)
 
-        section_names = {
-            "A": "Section A: Reasoning Trace",
-            "B": "Section B: Discharge Timing Dynamics",
-            "C": "Section C: SNF Patient State Transitions & Navigator Time Allocation"
-        }
+        # Use correct section names based on intake type
+        if case.intake_version == "abbrev_gen":
+            section_names = {
+                "A": "Section A: Reasoning Trace",
+                "B": "Section B: Early Warning Signals (LT vs Hospital)",
+                "C": "Section C: Decision Points & Triggers"
+            }
+        else:
+            section_names = {
+                "A": "Section A: Reasoning Trace",
+                "B": "Section B: Discharge Timing Dynamics",
+                "C": "Section C: SNF Patient State Transitions & Navigator Time Allocation"
+            }
 
         # Count answered questions
         total = len(follow_up_questions)
