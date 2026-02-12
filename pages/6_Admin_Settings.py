@@ -24,14 +24,11 @@ st.set_page_config(
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] li:first-child a span {
-        visibility: hidden;
-        position: relative;
+        font-size: 0;
     }
-    [data-testid="stSidebarNav"] li:first-child a span::before {
+    [data-testid="stSidebarNav"] li:first-child a span::after {
         content: "Dashboard";
-        visibility: visible;
-        position: absolute;
-        left: 0;
+        font-size: 14px;
     }
 </style>
 """, unsafe_allow_html=True)
