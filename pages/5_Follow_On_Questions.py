@@ -7,6 +7,7 @@ Users can return to complete unanswered questions at any time.
 
 import json
 import streamlit as st
+from datetime import timezone, timedelta
 from db import (
     init_db,
     get_setting,
@@ -19,6 +20,18 @@ from db import (
     get_cases_by_user_name
 )
 from auth import require_auth, get_current_username, init_session_state
+
+# US Central timezone (CST = UTC-6, CDT = UTC-5)
+CST = timezone(timedelta(hours=-6))
+
+def format_time_cst(dt):
+    """Convert datetime to CST and format for display."""
+    if dt is None:
+        return "N/A"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt_cst = dt.astimezone(CST)
+    return dt_cst.strftime('%b %d, %Y %I:%M %p')
 
 # Page configuration
 st.set_page_config(
@@ -223,9 +236,9 @@ for case_info in cases_with_followups:
     total = case_info["total_questions"]
     status = "✅ Complete" if case_info["is_complete"] else f"⏳ {answered}/{total} answered"
 
-    # Format time in 12-hour format with AM/PM
+    # Format time in CST
     created_at = case_info.get("created_at")
-    time_str = created_at.strftime('%b %d, %Y %I:%M %p') if created_at else "N/A"
+    time_str = format_time_cst(created_at)
 
     # Get demographics for easier identification
     age = case_info.get("age_at_snf_stay", "N/A")
