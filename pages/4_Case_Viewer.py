@@ -21,15 +21,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS to rename "app" to "Dashboard" in sidebar (using font-size trick to reduce flicker)
+# Custom CSS to rename "app" to "Dashboard" in sidebar
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] li:first-child a span {
-        font-size: 0 !important;
+        visibility: hidden;
+        position: relative;
     }
     [data-testid="stSidebarNav"] li:first-child a span::before {
         content: "Dashboard";
-        font-size: 14px;
+        visibility: visible;
+        position: absolute;
+        left: 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -134,7 +137,7 @@ def display_case(case, case_number=None):
     with col1:
         intake_type_label = {
             "abbrev": "Abbreviated",
-            "abbrev_general": "Abbreviated General",
+            "abbrev_gen": "Abbreviated General",
             "full": "Full"
         }.get(case.intake_version, case.intake_version)
         st.metric("Intake Type", intake_type_label)
@@ -218,7 +221,7 @@ def display_case(case, case_number=None):
         # Determine which sections to use based on intake type
         if case.intake_version == "abbrev":
             sections = ABBREV_SECTIONS
-        elif case.intake_version == "abbrev_general":
+        elif case.intake_version == "abbrev_gen":
             sections = ABBREV_GENERAL_SECTIONS
         else:
             sections = FULL_SECTIONS

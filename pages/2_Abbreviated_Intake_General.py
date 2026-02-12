@@ -32,15 +32,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS to rename "app" to "Dashboard" in sidebar (using font-size trick to reduce flicker)
+# Custom CSS to rename "app" to "Dashboard" in sidebar
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] li:first-child a span {
-        font-size: 0 !important;
+        visibility: hidden;
+        position: relative;
     }
     [data-testid="stSidebarNav"] li:first-child a span::before {
         content: "Dashboard";
-        font-size: 14px;
+        visibility: visible;
+        position: absolute;
+        left: 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -175,7 +178,7 @@ def save_current_draft():
 
         save_draft_case(
             user_name=current_user,
-            intake_version="abbrev_general",
+            intake_version="abbrev_gen",
             age_at_snf_stay=st.session_state.abbrev_gen_demographics.get('age'),
             gender=st.session_state.abbrev_gen_demographics.get('gender') or None,
             race=st.session_state.abbrev_gen_demographics.get('race') or None,
@@ -279,7 +282,7 @@ def clear_form_state():
 
 # Check for existing draft on first load
 if not st.session_state.abbrev_gen_draft_checked:
-    existing_draft = get_draft_case(current_user, "abbrev_general")
+    existing_draft = get_draft_case(current_user, "abbrev_gen")
     if existing_draft:
         st.session_state.abbrev_gen_pending_draft = existing_draft
     st.session_state.abbrev_gen_draft_checked = True
@@ -301,7 +304,7 @@ if hasattr(st.session_state, 'abbrev_gen_pending_draft') and st.session_state.ab
         st.session_state.abbrev_gen_pending_draft = None
         st.rerun()
     elif discard_clicked:
-        delete_draft_case(current_user, "abbrev_general")
+        delete_draft_case(current_user, "abbrev_gen")
         clear_form_state()
         st.session_state.abbrev_gen_pending_draft = None
         st.rerun()
@@ -541,7 +544,7 @@ if save_case_clicked:
         try:
             # Create case
             case_id = create_case(
-                intake_version="abbrev_general",
+                intake_version="abbrev_gen",
                 user_name=current_user,
                 age_at_snf_stay=int(age),
                 gender=gender,
@@ -569,7 +572,7 @@ if save_case_clicked:
                     )
 
             # Delete draft after successful case save
-            delete_draft_case(current_user, "abbrev_general")
+            delete_draft_case(current_user, "abbrev_gen")
 
             st.success(f"Case saved successfully!")
 
@@ -589,7 +592,7 @@ if save_case_clicked:
 
                 success, questions, error_msg = generate_follow_up_questions(
                     case_id=case_id,
-                    intake_version="abbrev_general",
+                    intake_version="abbrev_gen",
                     demographics=demographics,
                     services=services,
                     answers=st.session_state.abbrev_gen_answers

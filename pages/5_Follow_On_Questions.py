@@ -31,11 +31,14 @@ st.set_page_config(
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] li:first-child a span {
-        font-size: 0 !important;
+        visibility: hidden;
+        position: relative;
     }
     [data-testid="stSidebarNav"] li:first-child a span::before {
         content: "Dashboard";
-        font-size: 14px;
+        visibility: visible;
+        position: absolute;
+        left: 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -126,7 +129,7 @@ def get_case_numbers_by_type(username: str) -> dict:
 
     # Separate by intake type and number them
     abbrev_count = 0
-    abbrev_general_count = 0
+    abbrev_gen_count = 0
     full_count = 0
     case_numbers = {}
 
@@ -134,9 +137,9 @@ def get_case_numbers_by_type(username: str) -> dict:
         if case.intake_version == "abbrev":
             abbrev_count += 1
             case_numbers[case.case_id] = ("Abbreviated Intake", abbrev_count)
-        elif case.intake_version == "abbrev_general":
-            abbrev_general_count += 1
-            case_numbers[case.case_id] = ("Abbreviated General", abbrev_general_count)
+        elif case.intake_version == "abbrev_gen":
+            abbrev_gen_count += 1
+            case_numbers[case.case_id] = ("Abbreviated General", abbrev_gen_count)
         else:
             full_count += 1
             case_numbers[case.case_id] = ("Full Intake", full_count)
@@ -192,6 +195,7 @@ if not cases_with_followups:
     st.markdown("""
     Follow-up questions are generated automatically when you save a case in:
     - **Abbreviated Intake**
+    - **Abbreviated Intake General**
     - **Full Intake**
 
     Complete an intake form to get started!
@@ -226,7 +230,13 @@ for case_info in cases_with_followups:
         display_name = f"Case {case_num} ({age}, {race}, {state}) - {time_str} - {status}"
     else:
         # Fallback if not found
-        intake_type = "Abbreviated Intake" if case_info["intake_version"] == "abbrev" else "Full Intake"
+        intake_version = case_info["intake_version"]
+        if intake_version == "abbrev":
+            intake_type = "Abbreviated Intake"
+        elif intake_version == "abbrev_gen":
+            intake_type = "Abbreviated General"
+        else:
+            intake_type = "Full Intake"
         display_name = f"{intake_type} ({age}, {race}, {state}) - {time_str} - {status}"
 
     case_options.append(display_name)
@@ -322,7 +332,7 @@ with side_col:
                     # Get the right labels based on intake type
                     if case.intake_version == "abbrev":
                         labels = ABBREVIATED_QUESTION_LABELS
-                    elif case.intake_version == "abbrev_general":
+                    elif case.intake_version == "abbrev_gen":
                         labels = ABBREVIATED_GENERAL_QUESTION_LABELS
                     else:
                         labels = FULL_INTAKE_QUESTION_LABELS

@@ -473,7 +473,7 @@ def format_case_for_prompt(
     Format case data into a user message for the OpenAI API.
 
     Args:
-        intake_version: "abbrev", "abbrev_general", or "full"
+        intake_version: "abbrev", "abbrev_gen", or "full"
         demographics: Dict with age_at_snf_stay, gender, race, state
         services: Dict with snf_days, services_discussed, services_accepted
         answers: Dict of question_id -> answer text
@@ -484,7 +484,7 @@ def format_case_for_prompt(
     # Get the appropriate question labels
     if intake_version == "abbrev":
         question_labels = ABBREVIATED_QUESTION_LABELS
-    elif intake_version == "abbrev_general":
+    elif intake_version == "abbrev_gen":
         question_labels = ABBREVIATED_GENERAL_QUESTION_LABELS
     else:
         question_labels = FULL_INTAKE_QUESTION_LABELS
@@ -636,7 +636,7 @@ def generate_follow_up_questions(
     # Select system prompt based on intake version
     if intake_version == "abbrev":
         system_prompt = ABBREVIATED_SYSTEM_PROMPT
-    elif intake_version == "abbrev_general":
+    elif intake_version == "abbrev_gen":
         system_prompt = ABBREVIATED_GENERAL_SYSTEM_PROMPT
     else:
         system_prompt = FULL_INTAKE_SYSTEM_PROMPT

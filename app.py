@@ -17,15 +17,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to rename "app" to "Dashboard" in sidebar (using font-size trick to reduce flicker)
+# Custom CSS to rename "app" to "Dashboard" in sidebar
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] li:first-child a span {
-        font-size: 0 !important;
+        visibility: hidden;
+        position: relative;
     }
     [data-testid="stSidebarNav"] li:first-child a span::before {
         content: "Dashboard";
-        font-size: 14px;
+        visibility: visible;
+        position: absolute;
+        left: 0;
     }
 </style>
 """, unsafe_allow_html=True)
