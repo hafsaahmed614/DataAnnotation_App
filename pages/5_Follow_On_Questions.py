@@ -31,11 +31,11 @@ st.set_page_config(
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] li:first-child a span {
-        font-size: 0;
+        color: transparent;
     }
-    [data-testid="stSidebarNav"] li:first-child a span::after {
+    [data-testid="stSidebarNav"] li:first-child a span::before {
         content: "Dashboard";
-        font-size: 14px;
+        color: rgb(250, 250, 250);
     }
 </style>
 """, unsafe_allow_html=True)
