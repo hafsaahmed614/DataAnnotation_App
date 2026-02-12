@@ -21,15 +21,13 @@ st.set_page_config(
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] li:first-child a span {
-        visibility: hidden !important;
-        position: relative !important;
+        display: inline-block !important;
+        width: 0 !important;
+        overflow: visible !important;
+        white-space: nowrap !important;
     }
-    [data-testid="stSidebarNav"] li:first-child a span::before {
-        content: "Dashboard";
-        visibility: visible !important;
-        position: absolute !important;
-        left: 0;
-        color: rgb(250, 250, 250);
+    [data-testid="stSidebarNav"] li:first-child a span::after {
+        content: "Dashboard" !important;
     }
 </style>
 """, unsafe_allow_html=True)
