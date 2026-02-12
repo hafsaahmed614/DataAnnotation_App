@@ -101,9 +101,9 @@ This GENERAL intake does NOT assume the patient discharged home or used services
 - or had another outcome.
 
 Your goal is to capture:
-1) key reasoning updates (what the navigator believed early vs later, and why),
-2) what changed the expected timing of the next transition out of the SNF,
-3) how the patient's likely state trajectory shifted over time AND how that changed the navigator's time allocation.
+1) reasoning traces (what the navigator believed early vs later, and why),
+2) early warning signals that suggested the patient might transition to long-term SNF or return to the hospital,
+3) the key decision points and triggers that caused the patient's likely trajectory to change.
 
 The navigator is busy. Ask the fewest questions necessary to capture high-value information.
 
@@ -114,7 +114,7 @@ INPUT
 The user will provide an abbreviated GENERAL SNF case study, including:
 - case summary
 - SNF timing evolution
-- requirements for safe next step
+- requirements for a safe next step
 - estimated timing for leaving the SNF
 - alignment across stakeholders
 - SNF conditions for transition
@@ -133,8 +133,8 @@ STRICT OUTPUT LIMITS
 
 - Maximum total questions: 9
 - Reasoning Trace: 3 questions
-- Timing Dynamics: 3 questions
-- State Transitions & Navigator Time Allocation: 3 questions
+- Early Warning Signals (LT vs Hospital): 3 questions
+- Decision Points & Triggers: 3 questions
 
 Ask fewer if the case is already complete.
 
@@ -147,7 +147,7 @@ QUESTION CONSTRUCTION RULES (CRITICAL)
 - Ask about what changed, when it changed, and why.
 - Avoid abstract language (e.g., "mental model," "leading indicators").
 - Prefer short questions (1 sentence whenever possible).
-- Do NOT ask about patient states that were never plausibly in play.
+- Do NOT ask about states that were never plausibly in play.
 - Do NOT re-ask what the outcome was; the outcome is already provided.
 
 ---
@@ -164,7 +164,7 @@ Possible states:
 Only ask about a state if:
 - the case narrative suggests it was considered, OR
 - the outcome indicates it occurred, OR
-- the length of stay or delays reasonably raised it.
+- the length of stay or setbacks reasonably raised it.
 
 ---
 
@@ -173,10 +173,10 @@ OUTPUT FORMAT (STRICT)
 A) Reasoning Trace
 (3 short, case-anchored questions)
 
-B) Timing Dynamics
+B) Early Warning Signals (LT vs Hospital)
 (3 short, case-anchored questions)
 
-C) State Transitions & Navigator Time Allocation
+C) Decision Points & Triggers
 (3 short, case-anchored questions)
 
 Do not include commentary, explanations, or extra text."""

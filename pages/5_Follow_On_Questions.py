@@ -48,11 +48,18 @@ init_session_state()
 if not require_auth():
     st.stop()
 
-# Section labels for display
+# Section labels for display (default for abbreviated and full intake)
 SECTION_LABELS = {
     "A": "Reasoning Trace",
     "B": "Discharge Timing Dynamics",
     "C": "SNF Patient State Transitions, Incentives, and Navigator Time Allocation"
+}
+
+# Section labels for abbreviated GENERAL intake (different sections)
+ABBREVIATED_GENERAL_SECTION_LABELS = {
+    "A": "Reasoning Trace",
+    "B": "Early Warning Signals (LT vs Hospital)",
+    "C": "Decision Points & Triggers"
 }
 
 # Question labels for abbreviated intake
@@ -373,6 +380,9 @@ with main_col:
             st.session_state.followup_answers[selected_case_id][q.id] = q.answer_text or ""
 
     # Group questions by section
+    # Use the correct section labels based on intake type
+    section_labels = ABBREVIATED_GENERAL_SECTION_LABELS if case and case.intake_version == "abbrev_gen" else SECTION_LABELS
+
     current_section = None
     for question in questions:
         section = question.section
@@ -381,7 +391,7 @@ with main_col:
         if section != current_section:
             current_section = section
             st.markdown("---")
-            st.subheader(f"Section {section}: {SECTION_LABELS.get(section, section)}")
+            st.subheader(f"Section {section}: {section_labels.get(section, section)}")
 
         # Question display
         q_id = question.id
@@ -539,7 +549,13 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### Question Sections")
-    for section, label in SECTION_LABELS.items():
+    # Use correct section labels based on selected case's intake type
+    sidebar_section_labels = SECTION_LABELS
+    if 'selected_followup_case' in st.session_state and st.session_state.selected_followup_case:
+        selected_case = get_case_by_id(st.session_state.selected_followup_case)
+        if selected_case and selected_case.intake_version == "abbrev_gen":
+            sidebar_section_labels = ABBREVIATED_GENERAL_SECTION_LABELS
+    for section, label in sidebar_section_labels.items():
         st.markdown(f"**{section})** {label}")
 
     st.markdown("---")
