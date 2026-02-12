@@ -90,6 +90,98 @@ C) SNF Patient State Transitions & Navigator Time Allocation
 Do not include commentary, explanations, or extra text."""
 
 
+# System prompt for ABBREVIATED GENERAL intake follow-up questions
+ABBREVIATED_GENERAL_SYSTEM_PROMPT = """You are generating short, high-signal follow-on questions for a patient navigator AFTER they completed an abbreviated GENERAL case study about a past SNF patient.
+
+This GENERAL intake does NOT assume the patient discharged home or used services. The patient could have:
+- discharged home,
+- stayed long-term in the SNF,
+- returned to the hospital,
+- passed away in the SNF,
+- or had another outcome.
+
+Your goal is to capture:
+1) key reasoning updates (what the navigator believed early vs later, and why),
+2) what changed the expected timing of the next transition out of the SNF,
+3) how the patient's likely state trajectory shifted over time AND how that changed the navigator's time allocation.
+
+The navigator is busy. Ask the fewest questions necessary to capture high-value information.
+
+---
+
+INPUT
+
+The user will provide an abbreviated GENERAL SNF case study, including:
+- case summary
+- SNF timing evolution
+- requirements for safe next step
+- estimated timing for leaving the SNF
+- alignment across stakeholders
+- SNF conditions for transition
+- HHA involvement (if any)
+- information shared with HHA (if any)
+- outcome ("what happened to the patient")
+- early signs that suggested the outcome
+- what the navigator learned / would do differently
+
+Use only facts already mentioned in the case.
+Do NOT introduce new hypothetical scenarios unless clearly triggered by the case.
+
+---
+
+STRICT OUTPUT LIMITS
+
+- Maximum total questions: 9
+- Reasoning Trace: 3 questions
+- Timing Dynamics: 3 questions
+- State Transitions & Navigator Time Allocation: 3 questions
+
+Ask fewer if the case is already complete.
+
+---
+
+QUESTION CONSTRUCTION RULES (CRITICAL)
+
+- Use past tense.
+- Each question must reference a specific case detail from the narrative or outcome.
+- Ask about what changed, when it changed, and why.
+- Avoid abstract language (e.g., "mental model," "leading indicators").
+- Prefer short questions (1 sentence whenever possible).
+- Do NOT ask about patient states that were never plausibly in play.
+- Do NOT re-ask what the outcome was; the outcome is already provided.
+
+---
+
+STATE TRANSITIONS (ONLY IF TRIGGERED)
+
+Possible states:
+- Short-term SNF
+- Long-term SNF
+- Discharged from SNF
+- Returned to hospital
+- Death in SNF
+
+Only ask about a state if:
+- the case narrative suggests it was considered, OR
+- the outcome indicates it occurred, OR
+- the length of stay or delays reasonably raised it.
+
+---
+
+OUTPUT FORMAT (STRICT)
+
+A) Reasoning Trace
+(3 short, case-anchored questions)
+
+B) Timing Dynamics
+(3 short, case-anchored questions)
+
+C) State Transitions & Navigator Time Allocation
+(3 short, case-anchored questions)
+
+Do not include commentary, explanations, or extra text."""
+
+
 # System prompt for FULL intake follow-up questions
 FULL_INTAKE_SYSTEM_PROMPT = """You are an expert clinical operations interviewer specializing in SNF-to-home transitions. Your role is to generate follow-on questions for a patient navigator AFTER they have completed a case study about a past patient. The purpose of the follow-on questions is to surface deeper reasoning, discharge timing dynamics, SNF disposition incentives, and how the navigator allocated limited time and attention as the case evolved.
 
@@ -323,6 +415,19 @@ ABBREVIATED_QUESTION_LABELS = {
     "aq8": "Information Shared with HHA"
 }
 
+# Question labels for abbreviated GENERAL intake (any outcome, not assuming discharge home)
+ABBREVIATED_GENERAL_QUESTION_LABELS = {
+    "gq1": "Case Summary",
+    "gq2": "SNF Team Timing",
+    "gq3": "Requirements for Safe Next Step",
+    "gq4": "Estimated Timing for Leaving SNF",
+    "gq5": "Alignment Across Stakeholders",
+    "gq6": "SNF Conditions for Transition",
+    "gq7": "Outcome",
+    "gq8": "Early Signs",
+    "gq9": "Learning"
+}
+
 # Question labels for full intake
 FULL_INTAKE_QUESTION_LABELS = {
     "q6": "Case Summary",
@@ -368,7 +473,7 @@ def format_case_for_prompt(
     Format case data into a user message for the OpenAI API.
 
     Args:
-        intake_version: "abbrev" or "full"
+        intake_version: "abbrev", "abbrev_general", or "full"
         demographics: Dict with age_at_snf_stay, gender, race, state
         services: Dict with snf_days, services_discussed, services_accepted
         answers: Dict of question_id -> answer text
@@ -379,6 +484,8 @@ def format_case_for_prompt(
     # Get the appropriate question labels
     if intake_version == "abbrev":
         question_labels = ABBREVIATED_QUESTION_LABELS
+    elif intake_version == "abbrev_general":
+        question_labels = ABBREVIATED_GENERAL_QUESTION_LABELS
     else:
         question_labels = FULL_INTAKE_QUESTION_LABELS
 
@@ -529,6 +636,8 @@ def generate_follow_up_questions(
     # Select system prompt based on intake version
     if intake_version == "abbrev":
         system_prompt = ABBREVIATED_SYSTEM_PROMPT
+    elif intake_version == "abbrev_general":
+        system_prompt = ABBREVIATED_GENERAL_SYSTEM_PROMPT
     else:
         system_prompt = FULL_INTAKE_SYSTEM_PROMPT
 

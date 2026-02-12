@@ -67,6 +67,19 @@ ABBREVIATED_QUESTION_LABELS = {
     "aq8": "Information Shared with HHA"
 }
 
+# Question labels for abbreviated GENERAL intake (any outcome)
+ABBREVIATED_GENERAL_QUESTION_LABELS = {
+    "gq1": "Case Summary",
+    "gq2": "SNF Team Timing",
+    "gq3": "Requirements for Safe Next Step",
+    "gq4": "Estimated Timing for Leaving SNF",
+    "gq5": "Alignment Across Stakeholders",
+    "gq6": "SNF Conditions for Transition",
+    "gq7": "Outcome",
+    "gq8": "Early Signs",
+    "gq9": "Learning"
+}
+
 # Question labels for full intake
 FULL_INTAKE_QUESTION_LABELS = {
     "q6": "Case Summary",
@@ -113,6 +126,7 @@ def get_case_numbers_by_type(username: str) -> dict:
 
     # Separate by intake type and number them
     abbrev_count = 0
+    abbrev_general_count = 0
     full_count = 0
     case_numbers = {}
 
@@ -120,6 +134,9 @@ def get_case_numbers_by_type(username: str) -> dict:
         if case.intake_version == "abbrev":
             abbrev_count += 1
             case_numbers[case.case_id] = ("Abbreviated Intake", abbrev_count)
+        elif case.intake_version == "abbrev_general":
+            abbrev_general_count += 1
+            case_numbers[case.case_id] = ("Abbreviated General", abbrev_general_count)
         else:
             full_count += 1
             case_numbers[case.case_id] = ("Full Intake", full_count)
@@ -305,6 +322,8 @@ with side_col:
                     # Get the right labels based on intake type
                     if case.intake_version == "abbrev":
                         labels = ABBREVIATED_QUESTION_LABELS
+                    elif case.intake_version == "abbrev_general":
+                        labels = ABBREVIATED_GENERAL_QUESTION_LABELS
                     else:
                         labels = FULL_INTAKE_QUESTION_LABELS
 

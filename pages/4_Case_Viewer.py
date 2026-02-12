@@ -45,7 +45,7 @@ if not require_auth():
 # Get admin password from secrets (if configured)
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", None)
 
-# Question labels for display (combined from both forms)
+# Question labels for display (combined from all forms)
 QUESTION_LABELS = {
     # Abbreviated intake questions
     "aq1": "Case Summary",
@@ -56,6 +56,17 @@ QUESTION_LABELS = {
     "aq6": "SNF Discharge Conditions",
     "aq7": "HHA Involvement",
     "aq8": "Information Shared with HHA",
+
+    # Abbreviated GENERAL intake questions (any outcome)
+    "gq1": "Case Summary",
+    "gq2": "SNF Team Timing",
+    "gq3": "Requirements for Safe Next Step",
+    "gq4": "Estimated Timing for Leaving SNF",
+    "gq5": "Alignment Across Stakeholders",
+    "gq6": "SNF Conditions for Transition",
+    "gq7": "Outcome",
+    "gq8": "Early Signs",
+    "gq9": "Learning",
 
     # Full intake questions
     "q6": "Case Summary",
@@ -100,6 +111,13 @@ ABBREV_SECTIONS = {
     "HHA Coordination": ["aq7", "aq8"]
 }
 
+# Section groupings for abbreviated GENERAL intake (any outcome)
+ABBREV_GENERAL_SECTIONS = {
+    "Case Overview": ["gq1"],
+    "SNF Stay & Transition": ["gq2", "gq3", "gq4", "gq5", "gq6"],
+    "Outcome & Reflection": ["gq7", "gq8", "gq9"]
+}
+
 
 def display_case(case, case_number=None):
     """Display a single case with all its details."""
@@ -114,7 +132,12 @@ def display_case(case, case_number=None):
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Intake Type", "Abbreviated" if case.intake_version == "abbrev" else "Full")
+        intake_type_label = {
+            "abbrev": "Abbreviated",
+            "abbrev_general": "Abbreviated General",
+            "full": "Full"
+        }.get(case.intake_version, case.intake_version)
+        st.metric("Intake Type", intake_type_label)
 
     with col2:
         st.metric("Created", case.created_at.strftime("%Y-%m-%d %H:%M") if case.created_at else "N/A")
@@ -193,7 +216,12 @@ def display_case(case, case_number=None):
 
     if answers:
         # Determine which sections to use based on intake type
-        sections = ABBREV_SECTIONS if case.intake_version == "abbrev" else FULL_SECTIONS
+        if case.intake_version == "abbrev":
+            sections = ABBREV_SECTIONS
+        elif case.intake_version == "abbrev_general":
+            sections = ABBREV_GENERAL_SECTIONS
+        else:
+            sections = FULL_SECTIONS
 
         # Render by section
         for section_name, question_ids in sections.items():
