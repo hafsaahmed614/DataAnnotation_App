@@ -104,22 +104,27 @@ st.markdown("---")
 st.header("🚀 Quick Start")
 
 if is_authenticated():
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.markdown("### 📝 Abbreviated Intake")
-        st.markdown("Quick form with essential questions. Supports audio recording.")
+        st.markdown("Quick form for patients discharged home.")
         st.page_link("pages/1_Abbreviated_Intake.py", label="Start Abbreviated Intake", icon="📝")
 
     with col2:
-        st.markdown("### 📋 Full Intake")
-        st.markdown("Comprehensive form with audio transcription support.")
-        st.page_link("pages/2_Full_Intake.py", label="Start Full Intake", icon="📋")
+        st.markdown("### 📄 Abbreviated General")
+        st.markdown("Quick form for any SNF outcome.")
+        st.page_link("pages/2_Abbreviated_Intake_General.py", label="Start Abbreviated General", icon="📄")
 
     with col3:
+        st.markdown("### 📋 Full Intake")
+        st.markdown("Comprehensive form with audio support.")
+        st.page_link("pages/3_Full_Intake.py", label="Start Full Intake", icon="📋")
+
+    with col4:
         st.markdown("### 🔍 Case Viewer")
-        st.markdown("View cases, transcripts, and version history.")
-        st.page_link("pages/3_Case_Viewer.py", label="View Cases", icon="🔍")
+        st.markdown("View cases and version history.")
+        st.page_link("pages/4_Case_Viewer.py", label="View Cases", icon="🔍")
 else:
     st.warning("Please log in above to access the intake forms and case viewer.")
 
@@ -138,7 +143,8 @@ with st.sidebar:
     st.markdown("### Navigation")
     st.markdown("""
     - **Dashboard**: Overview and login
-    - **Abbreviated Intake**: Quick case entry
+    - **Abbreviated Intake**: Quick case entry (discharged home)
+    - **Abbreviated General**: Quick case entry (any outcome)
     - **Full Intake**: Comprehensive case entry
     - **Case Viewer**: View your cases
     """)
