@@ -31,10 +31,14 @@ st.set_page_config(
 st.markdown("""
 <style>
     [data-testid="stSidebarNav"] li:first-child a span {
-        color: transparent;
+        visibility: hidden !important;
+        position: relative !important;
     }
     [data-testid="stSidebarNav"] li:first-child a span::before {
         content: "Dashboard";
+        visibility: visible !important;
+        position: absolute !important;
+        left: 0;
         color: rgb(250, 250, 250);
     }
 </style>

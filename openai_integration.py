@@ -532,11 +532,11 @@ def parse_follow_up_response(response_text: str) -> List[Dict[str, Any]]:
     questions = []
     current_section = None
 
-    # Section headers mapping
+    # Section headers mapping - includes patterns for all intake types
     section_patterns = {
         "A": r"^A\)\s*Reasoning\s*Trace",
-        "B": r"^B\)\s*Discharge\s*Timing\s*Dynamics",
-        "C": r"^C\)\s*SNF\s*Patient\s*State"
+        "B": r"^B\)\s*(Discharge\s*Timing\s*Dynamics|Early\s*Warning\s*Signals)",
+        "C": r"^C\)\s*(SNF\s*Patient\s*State|Decision\s*Points)"
     }
 
     lines = response_text.strip().split("\n")
