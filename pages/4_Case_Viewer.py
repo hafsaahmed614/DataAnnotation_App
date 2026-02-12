@@ -24,14 +24,17 @@ st.set_page_config(
 # Custom CSS to rename "app" to "Dashboard" in sidebar
 st.markdown("""
 <style>
-    [data-testid="stSidebarNav"] li:first-child a span {
-        display: inline-block !important;
-        width: 0 !important;
-        overflow: visible !important;
-        white-space: nowrap !important;
+    [data-testid="stSidebarNav"] ul li:first-child a {
+        pointer-events: auto;
     }
-    [data-testid="stSidebarNav"] li:first-child a span::after {
+    [data-testid="stSidebarNav"] ul li:first-child a span {
+        font-size: 0 !important;
+        letter-spacing: -9999px !important;
+    }
+    [data-testid="stSidebarNav"] ul li:first-child a span::before {
         content: "Dashboard" !important;
+        font-size: 14px !important;
+        letter-spacing: normal !important;
     }
 </style>
 """, unsafe_allow_html=True)
