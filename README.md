@@ -5,8 +5,9 @@ A Streamlit web application for collecting historical SNF (Skilled Nursing Facil
 ## Features
 
 ### Core Features
-- **Two Intake Forms**:
-  - **Abbreviated Intake**: Quick 8-question form for essential case information
+- **Three Intake Forms**:
+  - **Abbreviated Intake**: Quick 8-question form for patients discharged home
+  - **Abbreviated Intake General**: 9-question form for ANY SNF outcome (discharge home, long-term stay, hospital return, death, etc.)
   - **Full Intake**: Comprehensive 20+ question form for detailed patient journeys
 - **Audio Recording**: Record narrative answers via browser microphone (WebM format)
 - **AI Transcription**: OpenAI Whisper for automatic audio-to-text transcription (admin-only feature)
@@ -16,10 +17,11 @@ A Streamlit web application for collecting historical SNF (Skilled Nursing Facil
 ### User Features
 - **Secure Authentication**: Username + 4-digit PIN login system
 - **Login Persistence**: Stay logged in across page refreshes (session token via URL)
-- **Personal Case Numbering**: Cases numbered sequentially per user (e.g., john_doe_1, john_doe_2)
-- **Case Viewer**: View and export your saved cases as JSON
+- **Personal Case Numbering**: Cases numbered sequentially per intake type (e.g., Abbreviated Case 1, Abbrev General Case 1, Full Case 1)
+- **Case Viewer**: View and export your saved cases as JSON with intake type identification
 - **Resume Drafts**: Resume incomplete forms where you left off with full state restoration
 - **Session Timeout Warnings**: Smart warnings that auto-dismiss when you continue working
+- **US Central Timezone**: All timestamps displayed in CST for consistency
 
 ### Admin Features
 - **View All Cases**: Admin password access to view all user cases
@@ -33,12 +35,17 @@ A Streamlit web application for collecting historical SNF (Skilled Nursing Facil
 
 ### Follow-On Questions
 - **AI-Generated Questions**: GPT generates contextual follow-up questions based on case answers
-- **Three Sections**:
-  - **Section A**: Reasoning Trace
-  - **Section B**: Discharge Timing Dynamics
-  - **Section C**: SNF Patient State Transitions, Incentives, and Navigator Time Allocation
+- **Three Sections** (varies by intake type):
+  - For Abbreviated & Full Intake:
+    - **Section A**: Reasoning Trace
+    - **Section B**: Discharge Timing Dynamics
+    - **Section C**: SNF Patient State Transitions, Incentives, and Navigator Time Allocation
+  - For Abbreviated Intake General:
+    - **Section A**: Reasoning Trace
+    - **Section B**: Early Warning Signals (LT vs Hospital)
+    - **Section C**: Decision Points & Triggers
 - **Audio or Text Answers**: Answer follow-up questions via typing or audio recording
-- **Progress Tracking**: See answered/total questions per case
+- **Progress Tracking**: See answered/total questions per case with completion messages
 
 ## Project Structure
 
@@ -51,11 +58,12 @@ DataAnnotation_App/
 ├── transcribe.py                       # Audio transcription with OpenAI Whisper
 ├── openai_integration.py               # OpenAI GPT integration for follow-up questions
 ├── pages/
-│   ├── 1_Abbreviated_Intake.py         # Short 8-question intake form
-│   ├── 2_Full_Intake.py                # Comprehensive 20+ question intake form
-│   ├── 3_Case_Viewer.py                # View and export saved cases
-│   ├── 4_Follow_On_Questions.py        # Answer AI-generated follow-up questions
-│   └── 5_Admin_Settings.py             # Admin configuration and audio transcription manager
+│   ├── 1_Abbreviated_Intake.py         # Short 8-question intake form (discharged home)
+│   ├── 2_Abbreviated_Intake_General.py # 9-question intake form (any SNF outcome)
+│   ├── 3_Full_Intake.py                # Comprehensive 20+ question intake form
+│   ├── 4_Case_Viewer.py                # View and export saved cases
+│   ├── 5_Follow_On_Questions.py        # Answer AI-generated follow-up questions
+│   └── 6_Admin_Settings.py             # Admin configuration and audio transcription manager
 ├── .streamlit/
 │   └── config.toml                     # Streamlit server configuration
 ├── requirements.txt                    # Python dependencies
@@ -145,15 +153,17 @@ Main case data storage.
 | case_id | VARCHAR(250) | Primary key, format: `{username}_{number}` (e.g., "john_doe_1") |
 | created_at | DateTime | UTC timestamp of creation |
 | case_start_date | Date | Fixed: 2025-01-01 |
-| intake_version | String(10) | "abbrev" or "full" |
+| intake_version | String(10) | "abbrev", "abbrev_gen", or "full" |
 | user_name | String(200) | Username of case creator |
 | age_at_snf_stay | Integer | Patient's age during SNF stay |
 | gender | Text | Patient's gender |
 | race | Text | Patient's race |
 | state | Text | SNF location state |
+| snf_name | Text | Name of SNF (nullable) |
 | snf_days | Integer | Days in SNF (nullable) |
 | services_discussed | Text | Services discussed (nullable) |
 | services_accepted | Text | Services accepted (nullable) |
+| services_utilized_after_discharge | Text | Services used after discharge (nullable) |
 | answers_json | Text | JSON string of narrative responses |
 
 #### `users`
@@ -213,14 +223,16 @@ Work-in-progress cases for auto-save.
 |--------|------|-------------|
 | id | String(36) | UUID primary key |
 | user_name | String(200) | User's name |
-| intake_version | String(10) | "abbrev" or "full" |
+| intake_version | String(10) | "abbrev", "abbrev_gen", or "full" |
 | age_at_snf_stay | Integer | Demographics (all nullable for drafts) |
 | gender | Text | |
 | race | Text | |
 | state | Text | |
+| snf_name | Text | Name of SNF |
 | snf_days | Integer | |
 | services_discussed | Text | |
 | services_accepted | Text | |
+| services_utilized_after_discharge | Text | Services used after discharge |
 | answers_json | Text | JSON of narrative answers |
 | audio_json | Text | JSON of audio flags |
 | created_at | DateTime | Draft creation time |
@@ -236,7 +248,10 @@ Work-in-progress cases for auto-save.
    - Create a memorable 4-digit PIN
 
 2. **Fill Out an Intake Form**:
-   - Choose **Abbreviated Intake** (quick) or **Full Intake** (comprehensive)
+   - Choose an intake form based on the patient outcome:
+     - **Abbreviated Intake**: For patients discharged home (8 questions)
+     - **Abbreviated Intake General**: For ANY outcome including long-term stay, hospital return, death (9 questions)
+     - **Full Intake**: For comprehensive documentation (20+ questions)
    - Fill in patient demographics (age, gender, race, SNF state)
    - Answer narrative questions by **typing** or **recording audio**
    - Drafts auto-save every 2 minutes
@@ -278,10 +293,17 @@ Work-in-progress cases for auto-save.
 ## AI Features
 
 ### Follow-up Question Generation
-After saving a case, the app uses OpenAI GPT to generate follow-up questions organized into three sections:
+After saving a case, the app uses OpenAI GPT to generate follow-up questions organized into three sections.
+
+**For Abbreviated & Full Intake:**
 - **Section A**: Reasoning Trace - Questions about clinical decision-making
 - **Section B**: Discharge Timing Dynamics - Questions about timing and readiness
 - **Section C**: SNF Patient State Transitions, Incentives, and Navigator Time Allocation - Questions about transitions and resources
+
+**For Abbreviated Intake General:**
+- **Section A**: Reasoning Trace - What the navigator believed early vs later
+- **Section B**: Early Warning Signals (LT vs Hospital) - Signs suggesting long-term stay or hospital return
+- **Section C**: Decision Points & Triggers - Key decision points that changed the patient's trajectory
 
 ### Audio Transcription
 - Uses OpenAI Whisper for speech-to-text
@@ -304,7 +326,18 @@ openai>=1.0.0
 
 ## Version History
 
-- **v1.2** (Current):
+- **v1.3** (Current):
+  - **New Intake Form**: Abbreviated Intake General for ANY SNF outcome (not just discharge home)
+  - **New questions in Abbreviated General**: Outcome, Early Signs, Learning (9 total questions)
+  - **Different follow-up sections for Abbreviated General**: Early Warning Signals, Decision Points & Triggers
+  - **Intake type identification**: Case dropdowns show type (Abbreviated, Abbrev General, Full)
+  - **Case numbering by type**: Cases numbered separately per intake type
+  - **US Central timezone**: All timestamps displayed in CST
+  - **Improved completion messages**: Clear "Case complete" message when all follow-up questions answered
+  - **Database migrations**: Automatic column additions for snf_name, services_utilized_after_discharge
+  - **Dashboard CSS fix**: Sidebar properly shows "Dashboard" instead of "app"
+
+- **v1.2**:
   - Session timeout warning auto-dismisses when user continues working
   - Number input fields show placeholder instead of 0 on fresh login
   - Fixed draft detection false positives
