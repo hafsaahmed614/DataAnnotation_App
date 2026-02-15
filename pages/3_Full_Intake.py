@@ -486,6 +486,12 @@ st.session_state.full_demographics['race'] = race
 st.session_state.full_demographics['state'] = state
 st.session_state.full_demographics['snf_name'] = snf_name
 
+# Save Draft button after Demographics section
+if st.button("📄 Save Draft", key="save_draft_demographics"):
+    if save_current_draft():
+        st.success("Draft saved successfully!")
+        mark_auto_saved()
+
 st.markdown("---")
 
 # Section 2: Narrative Questions with Audio Support (organized by section)
@@ -549,6 +555,12 @@ for qid, question in FULL_QUESTIONS.items():
         st.session_state.full_answers[qid] = text_answer
 
 st.markdown("---")
+
+# Save Draft button after Narrative section
+if st.button("📄 Save Draft", key="save_draft_narrative"):
+    if save_current_draft():
+        st.success("Draft saved successfully!")
+        mark_auto_saved()
 
 # Section 3: Services and SNF Days
 st.header("3. Services & Duration")
@@ -629,7 +641,7 @@ if _has_data:
 col_draft, col_save = st.columns(2)
 
 with col_draft:
-    if st.button("📄 Save Draft", use_container_width=True):
+    if st.button("📄 Save Draft", key="save_draft_bottom", use_container_width=True):
         if save_current_draft():
             st.success("Draft saved successfully!")
             mark_auto_saved()
