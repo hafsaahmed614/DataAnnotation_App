@@ -510,9 +510,22 @@ st.session_state.abbrev_gen_services['services_utilized_after_discharge'] = serv
 
 st.markdown("---")
 
-# Auto-save check (trigger every 2 minutes)
-if should_auto_save():
-    if save_current_draft():
+# Auto-save draft on every interaction to prevent data loss on page navigation/refresh
+# Only save if the form has meaningful data to avoid creating empty drafts
+_has_data = (
+    any(v and v.strip() for v in st.session_state.abbrev_gen_answers.values()) or
+    st.session_state.abbrev_gen_demographics.get('gender') or
+    st.session_state.abbrev_gen_demographics.get('race') or
+    st.session_state.abbrev_gen_demographics.get('state') or
+    st.session_state.abbrev_gen_demographics.get('snf_name') or
+    st.session_state.abbrev_gen_services.get('services_discussed') or
+    st.session_state.abbrev_gen_services.get('services_accepted') or
+    st.session_state.abbrev_gen_services.get('services_utilized_after_discharge')
+)
+if _has_data:
+    save_current_draft()
+    # Only show the visual indicator periodically to avoid UI noise
+    if should_auto_save():
         mark_auto_saved()
 
 # Buttons row: Save Draft and Save Case
