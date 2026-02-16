@@ -566,9 +566,15 @@ with main_col:
         st.session_state.followup_answers[selected_case_id] = {}
         st.session_state.followup_audio[selected_case_id] = {}
 
-        # Pre-populate with existing answers
+        # Pre-populate with existing answers from DB
         for q in questions:
             st.session_state.followup_answers[selected_case_id][q.id] = q.answer_text or ""
+
+    # Ensure widget keys are set for all questions (avoids value= vs key conflict)
+    for q in questions:
+        widget_key = f"text_fu_{q.id}"
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = st.session_state.followup_answers[selected_case_id].get(q.id, "")
 
     # Group questions by section
     # Use the correct section labels based on intake type
@@ -641,11 +647,9 @@ with main_col:
                     if st.session_state.followup_audio.get(selected_case_id, {}).get(q_id):
                         st.info("Audio previously recorded.")
             else:
-                # Text input with on_change callback to auto-save draft
-                current_value = st.session_state.followup_answers[selected_case_id].get(q_id, "")
+                # Text input — value controlled via session state key only (no value= param)
                 text_answer = st.text_area(
                     "Type your answer:",
-                    value=current_value,
                     height=120,
                     key=f"text_fu_{q_id}",
                     label_visibility="collapsed",
