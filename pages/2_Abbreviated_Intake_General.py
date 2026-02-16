@@ -1,8 +1,7 @@
 """
 SNF Patient Navigator Case Collection - Abbreviated Intake General Page
 
-Generalized abbreviated intake form that works for ANY SNF outcome, including:
-- Discharged home
+Generalized abbreviated intake form for SNF outcomes other than discharge home:
 - Stayed long-term in the SNF
 - Returned to the hospital
 - Passed away in the SNF
@@ -353,8 +352,7 @@ if hasattr(st.session_state, 'abbrev_gen_pending_draft') and st.session_state.ab
 st.markdown(f"""
 Logged in as: **{get_current_username()}**
 
-This form captures case information for **any SNF outcome**, including patients who:
-- Discharged home
+This form captures case information for patients who did **not** discharge home, including those who:
 - Stayed long-term in the SNF
 - Returned to the hospital
 - Passed away in the SNF
@@ -694,8 +692,7 @@ with st.sidebar:
     st.markdown("### Abbreviated Intake General")
     st.markdown(f"**User:** {get_current_username()}")
     st.markdown("""
-    This form captures cases with **any outcome**:
-    - Discharged home
+    This form captures cases where the patient did **not** discharge home:
     - Stayed long-term
     - Returned to hospital
     - Passed away
