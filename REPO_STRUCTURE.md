@@ -3,7 +3,7 @@
 **Project**: SNF Patient Navigator Case Collection App
 **Version**: v1.3
 **Framework**: Streamlit (Python)
-**Analysis Date**: 2026-02-15
+**Analysis Date**: 2026-02-16
 
 ---
 
@@ -20,7 +20,7 @@ DataAnnotation_App/
 ├── pages/
 │   ├── 1_Abbreviated_Intake.py         # 8-question intake form (discharged home)
 │   ├── 2_Abbreviated_Intake_General.py # 9-question intake form (any SNF outcome)
-│   ├── 3_Full_Intake.py               # 20+ question comprehensive form
+│   ├── 3_Full_Intake.py                # 20+ question comprehensive form
 │   ├── 4_Case_Viewer.py               # View & export saved cases
 │   ├── 5_Follow_On_Questions.py        # Answer AI-generated follow-up questions
 │   └── 6_Admin_Settings.py            # Admin config & transcription manager
@@ -30,6 +30,7 @@ DataAnnotation_App/
 │   └── devcontainer.json              # GitHub Codespaces dev container
 ├── README.md                           # Project documentation
 ├── FUTURE_FEATURES.md                  # Planned features roadmap
+├── REPO_STRUCTURE.md                   # This file
 ├── requirements.txt                    # Python dependencies
 ├── runtime.txt                         # Python version (3.10)
 ├── packages.txt                        # System packages (ffmpeg)
@@ -63,7 +64,7 @@ DataAnnotation_App/
 - Quick-start buttons for each form type
 - Launch: `streamlit run app.py`
 
-### `db.py` (1337 lines) — Database Layer
+### `db.py` (1,337 lines) — Database Layer
 Defines 6 SQLAlchemy models:
 
 | Model | Purpose |
@@ -94,11 +95,13 @@ Key design decisions:
   - **Section C**: State transitions
 - Different prompt templates for abbreviated vs. full intake
 - Structured JSON output parsing
+- Error handling with fallback defaults
 
 ### `transcribe.py` (218 lines) — Audio Transcription
-- OpenAI Whisper integration
+- OpenAI Whisper integration with singleton model loading
 - Configurable model sizes (tiny, base, small, medium, large)
 - Audio file processing via ffmpeg
+- Transcript versioning
 
 ### `session_timer.py` (216 lines) — Session Management
 - 30-minute timeout aligned with Streamlit Cloud limits
@@ -112,12 +115,20 @@ Key design decisions:
 
 | Page | File | Questions | Description |
 |------|------|-----------|-------------|
-| Abbreviated Intake | `1_Abbreviated_Intake.py` | 8 | Quick form for patients discharged home |
-| Abbreviated General | `2_Abbreviated_Intake_General.py` | 9 | Quick form for any SNF outcome |
-| Full Intake | `3_Full_Intake.py` | 20+ | Comprehensive detailed intake |
-| Case Viewer | `4_Case_Viewer.py` | — | Search, view, and export cases as JSON |
-| Follow-Up Questions | `5_Follow_On_Questions.py` | — | Answer AI-generated follow-up questions |
-| Admin Settings | `6_Admin_Settings.py` | — | Admin config, transcription management |
+| Abbreviated Intake | `1_Abbreviated_Intake.py` (727 lines) | 8 | Quick form for patients discharged home |
+| Abbreviated General | `2_Abbreviated_Intake_General.py` (687 lines) | 9 | Quick form for any SNF outcome |
+| Full Intake | `3_Full_Intake.py` (780 lines) | 20+ | Comprehensive detailed intake |
+| Case Viewer | `4_Case_Viewer.py` (534 lines) | — | Search, view, and export cases as JSON |
+| Follow-Up Questions | `5_Follow_On_Questions.py` (594 lines) | — | Answer AI-generated follow-up questions |
+| Admin Settings | `6_Admin_Settings.py` (406 lines) | — | Admin config, transcription management |
+
+Common page patterns:
+- Authentication check at page start
+- Session timer initialization and activity tracking
+- Custom CSS for sidebar branding
+- Draft resume functionality (intake forms)
+- Audio recording via browser microphone
+- Form validation and error handling
 
 ---
 
@@ -139,7 +150,49 @@ AppSettings (standalone key-value store)
 
 ---
 
+## Architecture Patterns
+
+### Authentication Flow
+1. Username (full name) + 4-digit PIN login
+2. SHA-256 hashed PIN comparison
+3. Session token generation on success
+4. Query parameter persistence (`?user=X&token=Y`) across page navigation
+5. Admin access gated by separate password (from secrets)
+
+### Data Storage
+- Narrative answers stored as JSON in `answers_json` column
+- Audio flags stored as JSON in `audio_json` column
+- Follow-up questions parsed from GPT responses into structured JSON
+- Flexible schema supports future expansion without migrations
+
+### Session Management
+- 30-minute session timeout (Streamlit Cloud constraint)
+- 5-minute warning before timeout
+- 2-minute auto-save interval for draft cases
+- Activity tracking resets timer on user interaction
+
+### AI Integration
+- Template-based system prompts customized per intake type
+- GPT generates 12 follow-up questions across 3 sections
+- Structured JSON parsing with validation
+- Graceful fallback to default questions on API failure
+
+### Audio Pipeline
+- Browser microphone → WebM recording
+- OpenAI Whisper transcription (configurable model size)
+- Dual transcript storage: auto-generated + user-edited
+- Version tracking for response edits
+
+---
+
 ## Configuration & Deployment
+
+### Environment Variables Required
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | PostgreSQL connection string (Supabase) |
+| `OPENAI_API_KEY` | OpenAI API key for GPT and Whisper |
+| `ADMIN_PASSWORD` | Password for admin panel access |
 
 ### Local Development
 ```bash
@@ -150,8 +203,7 @@ Uses SQLite (`snf_cases.db`) by default.
 
 ### Streamlit Cloud / Production
 - Database: PostgreSQL via `DATABASE_URL` secret
-- Required secrets: `DATABASE_URL`, `OPENAI_API_KEY`, `ADMIN_PASSWORD`
-- Configured via `.streamlit/secrets.toml` (gitignored)
+- Required secrets in `.streamlit/secrets.toml` (gitignored)
 
 ### Dev Container (GitHub Codespaces)
 - Base image: `mcr.microsoft.com/devcontainers/python:1-3.11-bookworm`
@@ -163,7 +215,18 @@ Uses SQLite (`snf_cases.db`) by default.
 
 ## Testing
 
-No automated test suite exists. Testing is manual via the Streamlit UI. The future roadmap includes an "Admin Test Mode" feature.
+No automated test suite exists. Testing is manual via the Streamlit UI. The future roadmap includes an "Admin Test Mode" feature for one-click test case creation and cleanup.
+
+---
+
+## Version History
+
+| Version | Key Changes |
+|---------|-------------|
+| **v1.3** | Abbreviated Intake General form, intake type identification, per-type case numbering, CST timezone, dashboard improvements |
+| **v1.2** | Auto-dismissing timeout warnings, login persistence, number input fixes, draft detection fixes |
+| **v1.1** | Audio Transcription Manager, follow-up audio support, draft restoration |
+| **v1.0** | Initial release: abbreviated + full intake, audio recording, AI follow-ups, draft auto-save, session management |
 
 ---
 
@@ -172,6 +235,6 @@ No automated test suite exists. Testing is manual via the Streamlit UI. The futu
 | Component | Approx. Lines |
 |-----------|--------------|
 | Core modules (root `.py` files) | ~2,860 |
-| Page files (6 pages) | ~5,000+ |
+| Page files (6 pages) | ~3,730 |
+| **Total Python** | **~6,590** |
 | Documentation (`.md` files) | ~600 |
-| **Total Python** | **~9,000+** |
