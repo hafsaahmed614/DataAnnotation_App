@@ -6,6 +6,7 @@ Streamlit Cloud has a maximum session timeout of ~30 minutes.
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 import json
 
@@ -214,3 +215,53 @@ def render_resume_draft_banner(draft, intake_type: str, on_resume_callback=None,
                 on_discard_callback()
 
     return resume_clicked, discard_clicked
+
+
+def inject_periodic_save_js(interval_seconds: int = 30):
+    """Inject JavaScript that periodically blurs the active textarea.
+
+    Streamlit's st.text_area only sends its value to the server when the
+    widget loses focus (blur).  If the user types and then refreshes or
+    navigates away without clicking elsewhere, the value is never sent and
+    work is lost.
+
+    This snippet runs a setInterval that:
+      1. Every *interval_seconds*, checks if a textarea is focused.
+      2. Blurs it (which makes Streamlit send the current value and fire
+         on_change callbacks, triggering auto-save).
+      3. Immediately re-focuses the same element and restores the cursor
+         position so the user can keep typing seamlessly.
+
+    A beforeunload handler does the same on page refresh / tab close as a
+    best-effort final save.
+    """
+    js = f"""
+    <script>
+    (function() {{
+        const INTERVAL_MS = {interval_seconds * 1000};
+        const doc = window.parent.document;
+
+        function blurAndRefocus() {{
+            const el = doc.activeElement;
+            if (el && el.tagName === 'TEXTAREA') {{
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                el.blur();
+                setTimeout(function() {{
+                    el.focus();
+                    el.setSelectionRange(start, end);
+                }}, 120);
+            }}
+        }}
+
+        // Periodic auto-save trigger
+        if (!window._periodicSaveInterval) {{
+            window._periodicSaveInterval = setInterval(blurAndRefocus, INTERVAL_MS);
+        }}
+
+        // Best-effort save on page unload
+        window.parent.addEventListener('beforeunload', blurAndRefocus);
+    }})();
+    </script>
+    """
+    components.html(js, height=0, width=0)

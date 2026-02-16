@@ -16,7 +16,8 @@ from auth import require_auth, get_current_username, init_session_state
 from openai_integration import generate_follow_up_questions
 from session_timer import (
     init_session_timer, update_activity_time, should_auto_save, mark_auto_saved,
-    render_session_timer_warning, render_auto_save_status, render_resume_draft_banner
+    render_session_timer_warning, render_auto_save_status, render_resume_draft_banner,
+    inject_periodic_save_js
 )
 
 # Page configuration
@@ -56,6 +57,9 @@ if not require_auth():
 # Initialize session timer and update activity (page reruns on user interaction)
 init_session_timer()
 update_activity_time()
+
+# Periodic JS auto-save: blurs active textarea every 30s to trigger on_change
+inject_periodic_save_js()
 
 # Get current username for draft operations
 current_user = get_current_username()
