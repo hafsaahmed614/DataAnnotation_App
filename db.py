@@ -50,7 +50,7 @@ class Case(Base):
     case_id = Column(String(250), primary_key=True)  # Format: username_number (e.g., "john_1")
     created_at = Column(DateTime, default=lambda: datetime.utcnow(), nullable=False)
     case_start_date = Column(Date, default=FIXED_CASE_START_DATE, nullable=False)
-    intake_version = Column(String(10), nullable=False)  # "abbrev" or "full"
+    intake_version = Column(String(50), nullable=False)  # e.g. "abbrev", "full", "follow_on_abbrev"
     
     # User name (who created this case) - case sensitive
     user_name = Column(String(200), nullable=False)
@@ -211,7 +211,7 @@ class DraftCase(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_name = Column(String(200), nullable=False)
-    intake_version = Column(String(10), nullable=False)  # "abbrev" or "full"
+    intake_version = Column(String(50), nullable=False)  # e.g. "abbrev", "full", "follow_on_abbrev"
 
     # Demographics (nullable for drafts - may not be filled yet)
     age_at_snf_stay = Column(Integer, nullable=True)
@@ -645,6 +645,20 @@ def _run_migrations():
                 except Exception as e:
                     # Column might already exist or other error - log and continue
                     print(f"Migration note: Could not add {column_name} to {table_name}: {e}")
+
+        # Widen intake_version column for follow-on draft support (VARCHAR(10) -> VARCHAR(50))
+        for table_name in ("cases", "draft_cases"):
+            if table_name not in inspector.get_table_names():
+                continue
+            try:
+                # PostgreSQL: alter column type
+                conn.execute(text(
+                    f"ALTER TABLE {table_name} ALTER COLUMN intake_version TYPE VARCHAR(50)"
+                ))
+                conn.commit()
+            except Exception:
+                # SQLite doesn't enforce VARCHAR length, so this is a no-op there
+                pass
 
 
 def init_db():

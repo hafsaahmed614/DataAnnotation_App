@@ -17,9 +17,14 @@ from db import (
     save_follow_up_audio_response,
     get_latest_follow_up_audio,
     get_case_by_id,
-    get_cases_by_user_name
+    get_cases_by_user_name,
+    save_draft_case, get_draft_case, delete_draft_case
 )
 from auth import require_auth, get_current_username, init_session_state
+from session_timer import (
+    init_session_timer, update_activity_time, should_auto_save, mark_auto_saved,
+    render_session_timer_warning, render_auto_save_status, get_draft_info_message
+)
 
 # US Central timezone (CST = UTC-6, CDT = UTC-5)
 CST = timezone(timedelta(hours=-6))
@@ -66,6 +71,13 @@ init_session_state()
 # Check authentication
 if not require_auth():
     st.stop()
+
+# Initialize session timer and update activity
+init_session_timer()
+update_activity_time()
+
+# Get current username for draft operations
+current_user = get_current_username()
 
 # Section labels for display (default for abbreviated and full intake)
 SECTION_LABELS = {
@@ -142,6 +154,18 @@ if 'followup_audio' not in st.session_state:
 if 'saved_questions' not in st.session_state:
     st.session_state.saved_questions = set()  # Track which questions were just saved
 
+# Draft-related session state
+if 'followon_draft_checked' not in st.session_state:
+    st.session_state.followon_draft_checked = False
+if 'followon_draft_loaded' not in st.session_state:
+    st.session_state.followon_draft_loaded = False
+if 'followon_case_intake_version' not in st.session_state:
+    st.session_state.followon_case_intake_version = None
+if 'followon_pending_draft' not in st.session_state:
+    st.session_state.followon_pending_draft = None
+if 'followon_pending_draft_type' not in st.session_state:
+    st.session_state.followon_pending_draft_type = None
+
 
 def get_case_numbers_by_type(username: str) -> dict:
     """
@@ -168,6 +192,77 @@ def get_case_numbers_by_type(username: str) -> dict:
             case_numbers[case.case_id] = ("Full Intake", full_count)
 
     return case_numbers
+
+
+def save_followon_draft():
+    """Save current follow-on answers as a draft.
+
+    Syncs from widget keys first so that on_change callbacks always
+    save the latest value.
+    """
+    case_id = st.session_state.get('selected_followup_case')
+    intake_version = st.session_state.get('followon_case_intake_version')
+    if not case_id or not intake_version:
+        return False
+
+    try:
+        # Sync latest text-area values from widget keys into answers dict
+        if case_id in st.session_state.followup_answers:
+            for q_id in list(st.session_state.followup_answers[case_id].keys()):
+                widget_key = f"text_fu_{q_id}"
+                if widget_key in st.session_state:
+                    st.session_state.followup_answers[case_id][q_id] = st.session_state[widget_key]
+
+        # Build answers dict with case_id marker
+        answers_to_save = {"_case_id": case_id}
+        answers_to_save.update(st.session_state.followup_answers.get(case_id, {}))
+
+        # Get audio flags
+        audio_flags = {}
+        if case_id in st.session_state.followup_audio:
+            audio_flags = {qid: bool(data)
+                           for qid, data in st.session_state.followup_audio[case_id].items()}
+
+        draft_key = f"follow_on_{intake_version}"
+        save_draft_case(
+            user_name=current_user,
+            intake_version=draft_key,
+            answers=answers_to_save,
+            audio_flags=audio_flags
+        )
+        return True
+    except Exception as e:
+        st.error(f"Failed to save draft: {str(e)}")
+        return False
+
+
+def load_followon_draft(draft, cases_with_followups):
+    """Load follow-on draft data into session state.
+
+    Returns the case_id from the draft, or None if the draft is invalid.
+    """
+    answers_data = json.loads(draft.answers_json) if draft.answers_json else {}
+    draft_case_id = answers_data.pop("_case_id", None)
+    if not draft_case_id:
+        return None
+
+    # Verify the case still exists in the user's list
+    valid_case_ids = {c["case_id"] for c in cases_with_followups}
+    if draft_case_id not in valid_case_ids:
+        return None
+
+    # Load answers into session state
+    st.session_state.followup_answers[draft_case_id] = answers_data
+    if draft_case_id not in st.session_state.followup_audio:
+        st.session_state.followup_audio[draft_case_id] = {}
+
+    # Set widget keys so text areas get pre-populated on rerun
+    for q_id, answer_text in answers_data.items():
+        st.session_state[f"text_fu_{q_id}"] = answer_text
+
+    st.session_state.selected_followup_case = draft_case_id
+    st.session_state.followon_draft_loaded = True
+    return draft_case_id
 
 
 def save_single_answer(case_id: str, q_id: str, answer_text: str, is_na: bool = False):
@@ -199,8 +294,12 @@ def save_single_answer(case_id: str, q_id: str, answer_text: str, is_na: bool = 
 
 # Title
 st.title("❓ Follow-On Questions")
+
+# Session timeout warning (if applicable)
+render_session_timer_warning()
+
 st.markdown(f"""
-Logged in as: **{get_current_username()}**
+Logged in as: **{current_user}**
 
 Answer the AI-generated follow-up questions for your cases. These questions help capture
 deeper reasoning, timing dynamics, and factors that influenced patient outcomes.
@@ -209,9 +308,11 @@ You can **type** your answers or **record audio**.
 """)
 st.markdown("---")
 
+# Auto-save status indicator
+render_auto_save_status()
+
 # Get user's cases with follow-up questions
-username = get_current_username()
-cases_with_followups = get_cases_with_pending_follow_ups(username)
+cases_with_followups = get_cases_with_pending_follow_ups(current_user)
 
 if not cases_with_followups:
     st.info("📋 You don't have any cases with follow-up questions yet.")
@@ -225,8 +326,69 @@ if not cases_with_followups:
     """)
     st.stop()
 
+# Check for existing follow-on drafts on first load
+if not st.session_state.followon_draft_checked:
+    for draft_type in ("follow_on_abbrev", "follow_on_abbrev_gen", "follow_on_full"):
+        existing_draft = get_draft_case(current_user, draft_type)
+        if existing_draft:
+            st.session_state.followon_pending_draft = existing_draft
+            st.session_state.followon_pending_draft_type = draft_type
+            break
+    st.session_state.followon_draft_checked = True
+
+# Handle pending draft - show resume/discard banner
+if (st.session_state.followon_pending_draft
+        and not st.session_state.followon_draft_loaded):
+    draft = st.session_state.followon_pending_draft
+    draft_type = st.session_state.followon_pending_draft_type
+
+    # Determine display label
+    if "abbrev_gen" in draft_type:
+        draft_label = "Abbreviated General"
+    elif "abbrev" in draft_type:
+        draft_label = "Abbreviated"
+    else:
+        draft_label = "Full"
+
+    # Try to load the draft to get the case_id for display
+    draft_answers = json.loads(draft.answers_json) if draft.answers_json else {}
+    draft_case_id = draft_answers.get("_case_id", "unknown")
+
+    time_ago = get_draft_info_message(draft.updated_at)
+    answered_count = sum(1 for k, v in draft_answers.items()
+                         if k != "_case_id" and v and str(v).strip())
+
+    st.info(f"""
+        **You have unsaved Follow-On answers** for a {draft_label} case (last saved {time_ago})
+
+        {answered_count} answer(s) in draft. Would you like to resume or start fresh?
+    """)
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+    resume_clicked = False
+    discard_clicked = False
+    with col1:
+        if st.button("Resume Draft", type="primary", key="resume_followon_draft_btn"):
+            resume_clicked = True
+    with col2:
+        if st.button("Start Fresh", key="discard_followon_draft_btn"):
+            discard_clicked = True
+
+    if resume_clicked:
+        loaded_case_id = load_followon_draft(draft, cases_with_followups)
+        if loaded_case_id:
+            # Determine intake version from draft_type
+            iv = draft_type.replace("follow_on_", "")
+            st.session_state.followon_case_intake_version = iv
+        st.session_state.followon_pending_draft = None
+        st.rerun()
+    elif discard_clicked:
+        delete_draft_case(current_user, draft_type)
+        st.session_state.followon_pending_draft = None
+        st.rerun()
+
 # Get case numbers for display
-case_numbers = get_case_numbers_by_type(username)
+case_numbers = get_case_numbers_by_type(current_user)
 
 # Create a formatted list of cases for selection with new naming format
 case_options = []
@@ -283,6 +445,12 @@ if 'last_saved_case_id' in st.session_state and st.session_state.last_saved_case
         st.session_state.case_selector = reverse_case_id_map[redirect_case_id]
         st.session_state.selected_followup_case = redirect_case_id
 
+# If a follow-on draft was just loaded, auto-select the case
+if st.session_state.followon_draft_loaded and st.session_state.selected_followup_case:
+    draft_case_id = st.session_state.selected_followup_case
+    if draft_case_id in reverse_case_id_map:
+        st.session_state.case_selector = reverse_case_id_map[draft_case_id]
+
 # Case selection section
 st.header("1. Select a Case")
 
@@ -320,6 +488,10 @@ st.session_state.selected_followup_case = selected_case_id
 
 # Get case details for context
 case = get_case_by_id(selected_case_id)
+
+# Store the case's intake_version for draft saving
+if case:
+    st.session_state.followon_case_intake_version = case.intake_version
 
 st.markdown("---")
 
@@ -469,7 +641,7 @@ with main_col:
                     if st.session_state.followup_audio.get(selected_case_id, {}).get(q_id):
                         st.info("Audio previously recorded.")
             else:
-                # Text input
+                # Text input with on_change callback to auto-save draft
                 current_value = st.session_state.followup_answers[selected_case_id].get(q_id, "")
                 text_answer = st.text_area(
                     "Type your answer:",
@@ -477,12 +649,13 @@ with main_col:
                     height=120,
                     key=f"text_fu_{q_id}",
                     label_visibility="collapsed",
-                    help="Provide a detailed answer to this follow-up question."
+                    help="Provide a detailed answer to this follow-up question.",
+                    on_change=save_followon_draft
                 )
                 st.session_state.followup_answers[selected_case_id][q_id] = text_answer
 
-            # Save and N/A buttons
-            col1, col2, col3 = st.columns([1, 1, 3])
+            # Save, N/A, and Save Draft buttons
+            col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
             with col1:
                 if st.button("💾 Save", key=f"save_fu_{q_id}", type="secondary"):
                     answer_text = st.session_state.followup_answers[selected_case_id].get(q_id, "").strip()
@@ -497,6 +670,12 @@ with main_col:
                 if st.button("⊘ N/A", key=f"na_fu_{q_id}", type="secondary"):
                     if save_single_answer(selected_case_id, q_id, "N/A", is_na=True):
                         st.rerun()
+
+            with col3:
+                if st.button("Save Draft", key=f"save_draft_fu_{q_id}"):
+                    if save_followon_draft():
+                        st.success("Draft saved!")
+                        mark_auto_saved()
 
     st.markdown("---")
 
@@ -548,10 +727,33 @@ with main_col:
         if error_count > 0:
             st.warning(f"⚠️ {error_count} answer(s) could not be saved.")
 
+        # If all questions now answered, delete the follow-on draft
+        if saved_count > 0 and (total_answered >= total_questions):
+            intake_v = st.session_state.get('followon_case_intake_version')
+            if intake_v:
+                delete_draft_case(current_user, f"follow_on_{intake_v}")
+
+    # Save Draft button at the bottom
+    if st.button("📄 Save Draft", key="save_draft_followon_bottom", use_container_width=True):
+        if save_followon_draft():
+            st.success("Draft saved successfully!")
+            mark_auto_saved()
+
+# Auto-save draft on every interaction to prevent data loss
+_has_followon_data = (
+    selected_case_id in st.session_state.followup_answers and
+    any(v and str(v).strip()
+        for v in st.session_state.followup_answers[selected_case_id].values())
+)
+if _has_followon_data:
+    save_followon_draft()
+    if should_auto_save():
+        mark_auto_saved()
+
 # Sidebar info
 with st.sidebar:
     st.markdown("### Follow-On Questions")
-    st.markdown(f"**User:** {get_current_username()}")
+    st.markdown(f"**User:** {current_user}")
 
     st.markdown("---")
     st.markdown("### Your Cases")
