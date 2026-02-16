@@ -115,6 +115,54 @@ QUESTION_LABELS = {
     "q28": "Initial At-Home Status"
 }
 
+# Full question texts (prompts shown to the user during intake)
+QUESTION_TEXTS = {
+    # Abbreviated intake questions
+    "aq1": "Please provide a brief summary of this case: Why was the patient in the SNF, and what was the intended goal for getting them home? (2-5 sentences)",
+    "aq2": "How did the SNF team's view of discharge timing and readiness evolve over time? Did expectations change from admission to discharge?",
+    "aq3": "What needed to happen before a safe discharge home was possible?",
+    "aq4": "What was your best estimate of the discharge date before the patient actually left? What was that estimate based on?",
+    "aq5": "How aligned were the SNF team, patient/family, and HHA on the discharge plan? If there was misalignment, where did it occur?",
+    "aq6": "What conditions did the SNF require to be met before discharging the patient home?",
+    "aq7": "Was a Home Health Agency (HHA) involved? If so, which agency, and what happened with the handoff?",
+    "aq8": "What information was shared with the HHA to prepare them for the patient's care at home?",
+
+    # Abbreviated GENERAL intake questions
+    "gq1": "Please provide a brief summary of this case: Why was the patient in the SNF, and what was the intended goal for their stay? (2-5 sentences)",
+    "gq2": "How did the SNF team's view of timing and readiness for the next step evolve over time? Did expectations change during the stay?",
+    "gq3": "What needed to happen before a safe next step after the SNF stay was possible?",
+    "gq4": "What was your best estimate of when the patient would leave the SNF? What was that estimate based on?",
+    "gq5": "How aligned were the SNF team, patient/family, and any external providers on the plan? If there was misalignment, where did it occur?",
+    "gq6": "What conditions did the SNF require to be met before the patient could transition to the next setting?",
+    "gq7": "What was the patient's outcome after the SNF stay (for example: discharged home, stayed long-term, returned to hospital, passed away, or something else)? If the patient did not discharge home and/or did not use our services, what were the main reasons?",
+    "gq8": "Earlier in the stay, what signs (if any) suggested this outcome might happen?",
+    "gq9": "What did you learn from this case, and what would you do differently next time (if anything)?",
+
+    # Full intake questions
+    "q6": "Please provide a summary of this case: Why was the patient in the SNF, and what was the intended goal for getting them home?",
+    "q7": "What was the referral source for this case? What expectations were set at the time of referral?",
+    "q8": "What was the patient's path to the SNF? Where did they come from, and what timing details do you recall about their journey?",
+    "q9": "At the time of admission, what was the expected length of stay? How was this communicated?",
+    "q10": "What did the initial assessment reveal? Consider social, functional, and logistical factors that were identified.",
+    "q11": "What was the early reasoning about whether going home was feasible? What factors were considered?",
+    "q12": "Who were the key SNF staff members or roles involved in this patient's care and discharge planning?",
+    "q13": "How did the patient respond to discussions about going home and receiving services?",
+    "q14": "What were the patient's and family's goals for the first period at home after discharge?",
+    "q15": "How did the SNF team's view of discharge timing and readiness evolve over time? Did expectations change from admission to discharge?",
+    "q16": "What needed to happen before a safe discharge home was possible?",
+    "q17": "What services were discussed with the patient and family, and which services did they agree to receive?",
+    "q18": "Was a Home Health Agency (HHA) involved? If so, which agency, and what happened with the handoff process?",
+    "q19": "What information was shared with the HHA to prepare them for the patient's care at home?",
+    "q20": "What was your best estimate of the discharge date before the patient actually left? What was that estimate based on?",
+    "q21": "How aligned were the SNF team, patient/family, and HHA on the discharge plan? If there was misalignment, describe the details.",
+    "q22": "What conditions did the SNF require to be met before discharging the patient home?",
+    "q23": "What was the plan for the first 24-48 hours after the patient arrived home?",
+    "q25": "How would you describe the overall transition from SNF to home? What went well and what could have been improved?",
+    "q26": "Were all aspects of the handoff completed as planned? Were there any gaps or missing elements?",
+    "q27": "Was there contact with the patient within 24 hours of discharge? If so, what was learned from that contact?",
+    "q28": "What was the patient's initial status at home, and what was identified as the next step in their care?",
+}
+
 # Section groupings for full intake
 FULL_SECTIONS = {
     "Case Overview": ["q6", "q7"],
@@ -283,7 +331,12 @@ def display_case(case, case_number=None):
                 for qid in question_ids:
                     if qid in answers and answers[qid].strip():
                         label = QUESTION_LABELS.get(qid, qid)
+                        question_text = QUESTION_TEXTS.get(qid, "")
                         st.markdown(f"**{label}** *(ID: {qid})*")
+
+                        # Display the question prompt
+                        if question_text:
+                            st.markdown(f"*{question_text}*")
 
                         # Display answer in a nice box
                         st.info(answers[qid])
@@ -301,7 +354,10 @@ def display_case(case, case_number=None):
             st.markdown("### 📌 Other Responses")
             for qid, answer in other_answers.items():
                 label = QUESTION_LABELS.get(qid, qid)
+                question_text = QUESTION_TEXTS.get(qid, "")
                 st.markdown(f"**{label}** *(ID: {qid})*")
+                if question_text:
+                    st.markdown(f"*{question_text}*")
                 st.info(answer)
     else:
         st.info("No narrative responses recorded for this case.")
