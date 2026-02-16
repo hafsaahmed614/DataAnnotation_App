@@ -449,11 +449,13 @@ if 'last_saved_case_id' in st.session_state and st.session_state.last_saved_case
         st.session_state.case_selector = reverse_case_id_map[redirect_case_id]
         st.session_state.selected_followup_case = redirect_case_id
 
-# If a follow-on draft was just loaded, auto-select the case
+# If a follow-on draft was just loaded, auto-select the case (once)
 if st.session_state.followon_draft_loaded and st.session_state.selected_followup_case:
     draft_case_id = st.session_state.selected_followup_case
     if draft_case_id in reverse_case_id_map:
         st.session_state.case_selector = reverse_case_id_map[draft_case_id]
+    # Clear flag so subsequent reruns don't override user's case selection
+    st.session_state.followon_draft_loaded = False
 
 # Case selection section
 st.header("1. Select a Case")
