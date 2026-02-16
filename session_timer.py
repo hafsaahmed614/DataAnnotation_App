@@ -218,27 +218,28 @@ def render_resume_draft_banner(draft, intake_type: str, on_resume_callback=None,
 
 
 def inject_periodic_save_js(interval_seconds: int = 30):
-    """Inject JavaScript that periodically blurs the active textarea.
+    """Inject JavaScript that auto-saves textarea content.
 
     Streamlit's st.text_area only sends its value to the server when the
     widget loses focus (blur).  If the user types and then refreshes or
     navigates away without clicking elsewhere, the value is never sent and
-    work is lost.
+    work is lost.  This is especially common for the *last* question on a
+    page — there is no "next field" to click so the textarea never blurs.
 
-    This snippet runs a setInterval that:
-      1. Every *interval_seconds*, checks if a textarea is focused.
-      2. Blurs it (which makes Streamlit send the current value and fire
-         on_change callbacks, triggering auto-save).
-      3. Immediately re-focuses the same element and restores the cursor
-         position so the user can keep typing seamlessly.
+    Three mechanisms work together to prevent data loss:
 
-    A beforeunload handler does the same on page refresh / tab close as a
-    best-effort final save.
+      1. **Debounced input save** — listens for typing in any textarea and,
+         after the user stops for 3 seconds, briefly blurs/re-focuses to
+         flush the value to Streamlit.  This is the primary safeguard.
+      2. **Periodic interval** — every *interval_seconds* (default 30 s),
+         blurs the active textarea as a safety net for idle sessions.
+      3. **beforeunload** — best-effort blur on page refresh / tab close.
     """
     js = f"""
     <script>
     (function() {{
         const INTERVAL_MS = {interval_seconds * 1000};
+        const DEBOUNCE_MS = 3000;
         const doc = window.parent.document;
 
         function blurAndRefocus() {{
@@ -254,12 +255,38 @@ def inject_periodic_save_js(interval_seconds: int = 30):
             }}
         }}
 
-        // Periodic auto-save trigger
+        // 1. Debounced save: blur/refocus 3 s after the user stops typing.
+        //    This ensures the last-edited textarea value is flushed to
+        //    Streamlit even if the user never clicks away from it.
+        if (!window._debounceSaveSetup) {{
+            window._debounceSaveSetup = true;
+            var debounceTimer = null;
+            doc.addEventListener('input', function(e) {{
+                if (e.target.tagName === 'TEXTAREA') {{
+                    clearTimeout(debounceTimer);
+                    var target = e.target;
+                    debounceTimer = setTimeout(function() {{
+                        // Only blur if the same textarea is still focused
+                        if (doc.activeElement === target) {{
+                            var s = target.selectionStart;
+                            var end = target.selectionEnd;
+                            target.blur();
+                            setTimeout(function() {{
+                                target.focus();
+                                target.setSelectionRange(s, end);
+                            }}, 120);
+                        }}
+                    }}, DEBOUNCE_MS);
+                }}
+            }}, true);
+        }}
+
+        // 2. Periodic auto-save trigger (safety net for idle sessions)
         if (!window._periodicSaveInterval) {{
             window._periodicSaveInterval = setInterval(blurAndRefocus, INTERVAL_MS);
         }}
 
-        // Best-effort save on page unload
+        // 3. Best-effort save on page unload
         window.parent.addEventListener('beforeunload', blurAndRefocus);
     }})();
     </script>
