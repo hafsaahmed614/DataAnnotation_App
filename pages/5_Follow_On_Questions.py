@@ -731,6 +731,10 @@ with main_col:
             if intake_v:
                 delete_draft_case(current_user, f"follow_on_{intake_v}")
 
+        # Rerun to refresh progress bar and question statuses from DB
+        if saved_count > 0:
+            st.rerun()
+
     # Save Draft button at the bottom
     if st.button("📄 Save Draft", key="save_draft_followon_bottom", use_container_width=True):
         if save_followon_draft():
