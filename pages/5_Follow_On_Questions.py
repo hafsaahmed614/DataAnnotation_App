@@ -658,24 +658,14 @@ with main_col:
                 )
                 st.session_state.followup_answers[selected_case_id][q_id] = text_answer
 
-            # Save, N/A, and Save Draft buttons
-            col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
+            # N/A and Save Draft buttons
+            col1, col2, col3 = st.columns([1, 1, 3])
             with col1:
-                if st.button("💾 Save", key=f"save_fu_{q_id}", type="secondary"):
-                    answer_text = st.session_state.followup_answers[selected_case_id].get(q_id, "").strip()
-
-                    if answer_text:
-                        if save_single_answer(selected_case_id, q_id, answer_text):
-                            st.rerun()
-                    else:
-                        st.warning("Please provide an answer before saving.")
-
-            with col2:
                 if st.button("⊘ N/A", key=f"na_fu_{q_id}", type="secondary"):
                     if save_single_answer(selected_case_id, q_id, "N/A", is_na=True):
                         st.rerun()
 
-            with col3:
+            with col2:
                 if st.button("Save Draft", key=f"save_draft_fu_{q_id}"):
                     if save_followon_draft():
                         st.success("Draft saved!")
