@@ -264,8 +264,42 @@ if 'full_services' not in st.session_state:
 
 
 def save_current_draft():
-    """Save current form state as draft."""
+    """Save current form state as draft.
+
+    Syncs from widget keys first so that on_change callbacks always
+    save the latest value (widget keys are updated by Streamlit before
+    the callback runs, but the answers dict is only updated later in
+    the page script).
+    """
     try:
+        # Sync latest text-area values from widget keys into answers dict
+        for qid in FULL_QUESTIONS:
+            widget_key = f"text_{qid}"
+            if widget_key in st.session_state:
+                st.session_state.full_answers[qid] = st.session_state[widget_key]
+
+        # Sync demographics from widget keys
+        if 'full_age' in st.session_state:
+            st.session_state.full_demographics['age'] = st.session_state.full_age
+        if 'full_gender' in st.session_state:
+            st.session_state.full_demographics['gender'] = st.session_state.full_gender
+        if 'full_race' in st.session_state:
+            st.session_state.full_demographics['race'] = st.session_state.full_race
+        if 'full_state' in st.session_state:
+            st.session_state.full_demographics['state'] = st.session_state.full_state
+        if 'full_snf_name' in st.session_state:
+            st.session_state.full_demographics['snf_name'] = st.session_state.full_snf_name
+
+        # Sync services from widget keys
+        if 'full_snf_days' in st.session_state:
+            st.session_state.full_services['snf_days'] = st.session_state.full_snf_days
+        if 'full_services_discussed' in st.session_state:
+            st.session_state.full_services['services_discussed'] = st.session_state.full_services_discussed
+        if 'full_services_accepted' in st.session_state:
+            st.session_state.full_services['services_accepted'] = st.session_state.full_services_accepted
+        if 'full_services_utilized' in st.session_state:
+            st.session_state.full_services['services_utilized_after_discharge'] = st.session_state.full_services_utilized
+
         # Get audio flags (which questions have audio)
         audio_flags = {qid: bool(st.session_state.full_audio.get(qid))
                        for qid in FULL_QUESTIONS}

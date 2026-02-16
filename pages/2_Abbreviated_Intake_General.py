@@ -173,8 +173,42 @@ if 'abbrev_gen_services' not in st.session_state:
 
 
 def save_current_draft():
-    """Save current form state as draft."""
+    """Save current form state as draft.
+
+    Syncs from widget keys first so that on_change callbacks always
+    save the latest value (widget keys are updated by Streamlit before
+    the callback runs, but the answers dict is only updated later in
+    the page script).
+    """
     try:
+        # Sync latest text-area values from widget keys into answers dict
+        for qid in ABBREV_GEN_QUESTIONS:
+            widget_key = f"text_{qid}"
+            if widget_key in st.session_state:
+                st.session_state.abbrev_gen_answers[qid] = st.session_state[widget_key]
+
+        # Sync demographics from widget keys
+        if 'abbrev_gen_age' in st.session_state:
+            st.session_state.abbrev_gen_demographics['age'] = st.session_state.abbrev_gen_age
+        if 'abbrev_gen_gender' in st.session_state:
+            st.session_state.abbrev_gen_demographics['gender'] = st.session_state.abbrev_gen_gender
+        if 'abbrev_gen_race' in st.session_state:
+            st.session_state.abbrev_gen_demographics['race'] = st.session_state.abbrev_gen_race
+        if 'abbrev_gen_state' in st.session_state:
+            st.session_state.abbrev_gen_demographics['state'] = st.session_state.abbrev_gen_state
+        if 'abbrev_gen_snf_name' in st.session_state:
+            st.session_state.abbrev_gen_demographics['snf_name'] = st.session_state.abbrev_gen_snf_name
+
+        # Sync services from widget keys
+        if 'abbrev_gen_snf_days' in st.session_state:
+            st.session_state.abbrev_gen_services['snf_days'] = st.session_state.abbrev_gen_snf_days
+        if 'abbrev_gen_services_discussed' in st.session_state:
+            st.session_state.abbrev_gen_services['services_discussed'] = st.session_state.abbrev_gen_services_discussed
+        if 'abbrev_gen_services_accepted' in st.session_state:
+            st.session_state.abbrev_gen_services['services_accepted'] = st.session_state.abbrev_gen_services_accepted
+        if 'abbrev_gen_services_utilized' in st.session_state:
+            st.session_state.abbrev_gen_services['services_utilized_after_discharge'] = st.session_state.abbrev_gen_services_utilized
+
         # Get audio flags (which questions have audio)
         audio_flags = {qid: bool(st.session_state.abbrev_gen_audio.get(qid))
                        for qid in ABBREV_GEN_QUESTIONS}
