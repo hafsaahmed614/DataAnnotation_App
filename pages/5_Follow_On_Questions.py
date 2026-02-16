@@ -490,6 +490,18 @@ if selected_display == "Select a case...":
 
 # Get the selected case ID
 selected_case_id = case_id_map[selected_display]
+
+# Auto-save previous case's draft when switching to a different case.
+# At this point, selected_followup_case and followon_case_intake_version
+# still hold the PREVIOUS case's values, so save_followon_draft() will
+# persist the old case's in-progress answers before we overwrite them.
+previous_case_id = st.session_state.get('selected_followup_case')
+if previous_case_id and previous_case_id != selected_case_id:
+    prev_answers = st.session_state.get('followup_answers', {}).get(previous_case_id, {})
+    has_unsaved = any(v and str(v).strip() for v in prev_answers.values())
+    if has_unsaved:
+        save_followon_draft()
+
 st.session_state.selected_followup_case = selected_case_id
 
 # Get case details for context
