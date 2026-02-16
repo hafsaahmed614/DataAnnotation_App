@@ -491,15 +491,22 @@ for qid, question in ABBREV_QUESTIONS.items():
             if st.session_state.abbrev_audio.get(qid):
                 st.info("Audio previously recorded.")
     else:
-        # Text input
+        # Text input with on_change callback to auto-save when user clicks out of field
         text_answer = st.text_area(
             question["prompt"],
             height=120,
             help=question["help"],
             key=f"text_{qid}",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            on_change=save_current_draft
         )
         st.session_state.abbrev_answers[qid] = text_answer
+
+    # Per-question Save Draft button
+    if st.button("Save Draft", key=f"save_draft_{qid}"):
+        if save_current_draft():
+            st.success("Draft saved!")
+            mark_auto_saved()
 
     st.markdown("---")
 
